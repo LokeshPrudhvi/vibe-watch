@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-server
+.env
+.env.*
+!.env.example
+.DS_Store
+.neon
+
+# Supabase CLI working files (supabase/.env.local is covered by .env.*)
+supabase/.temp
+supabase/.branches
+# per-machine Claude Code settings
+.claude/settings.local.json
+# APKs are attached to GitHub Releases, never committed
+*.apk
+*.aab

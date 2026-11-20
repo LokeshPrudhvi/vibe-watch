@@ -1,0 +1,75 @@
+# Builds the phone app's release APK on GitHub's machines and attaches it to a GitHub Release
+# (it shows up under the release's "Assets"). Runs for every pushed tag like v0.1.0, or by hand.
+name: Android APK
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the APK to (created if it doesn't exist)
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # Optional repo variable. Empty → the app uses the hosted Supabase proxy (mobile/src/lib/api.ts).
+      EXPO_PUBLIC_TMDB_PROXY: ${{ vars.TMDB_PROXY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and lint
+        run: |
+          npx tsc --noEmit
+          npx expo lint
+
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build the release APK (64- and 32-bit ARM phones)
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Name the APK after the release
+        run: cp android/app/build/outputs/apk/release/app-release.apk "vibe-${TAG}.apk"
+
+      - name: Attach the APK to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "vibe-${TAG}.apk" --clobber
+          else
+            gh release create "$TAG" "vibe-${TAG}.apk" --target "$GITHUB_SHA" --title "vibe. ${TAG}" --notes "Android APK for phones. Download vibe-${TAG}.apk below, open it on your phone and allow installing from this source. Movies come from the hosted TMDB proxy (Supabase Edge Function). Signed with the development key: fine for sideloading, not for the Play Store."
+          fi

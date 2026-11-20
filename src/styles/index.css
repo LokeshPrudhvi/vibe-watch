@@ -1,0 +1,239 @@
+@import "tailwindcss";
+/* the phone app has its own styling; keep its files out of class scanning */
+@source not "../../mobile";
+
+/* ---------- Design tokens (dark is the default) ---------- */
+@theme {
+  /* neutral greys, no blue/purple tint */
+  --color-base: #0e0e0e;
+  --color-night: #111111; /* dark text on bright fills (text-base is a font-size in Tailwind) */
+  --color-card: #1a1a1a;
+  --color-card-2: #252525;
+  --color-ink: #f5f5f5;
+  --color-muted: #a3a3a3;
+  /* overlay colour: white on dark, black on light → use as bg-tint/10, ring-tint/5… */
+  --color-tint: #ffffff;
+  /* text/icons sitting on an ink-coloured fill */
+  --color-inverse: #0e0e0e;
+
+  /* mood + action accents */
+  --color-cozy: #ff9f5a;
+  --color-mind: #b18cff;
+  --color-feel: #ffd23f;
+  --color-edge: #ff4d74;
+  --color-time: #e5e5e5;
+  --color-match: #7cf29a;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* every default CSS transition follows the animation-speed setting */
+  --default-transition-duration: calc(150ms * var(--motion-scale));
+}
+
+:root {
+  color-scheme: dark;
+  --motion-scale: 1;
+  --dur-slow: calc(300ms * var(--motion-scale));
+
+  /* glass knobs, changed by Settings → Themes */
+  --glass-blur: 24px;
+  --glass-sat: 170%;
+  --glass-alpha: 62%; /* frosted */
+  --liquid-alpha: 38%; /* liquid */
+  --highlight: rgb(255 255 255 / 0.22);
+  --glass-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.55);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-base: #f2f2f2;
+  --color-card: #ffffff;
+  --color-card-2: #e9e9e9;
+  --color-ink: #141414;
+  --color-muted: #6b6b6b;
+  --color-tint: #000000;
+  --color-inverse: #f5f5f5;
+  --color-feel: #e3a600;
+  --color-time: #1f1f1f;
+  --color-match: #1fa855;
+  --glass-alpha: 70%;
+  --liquid-alpha: 50%;
+  --highlight: rgb(255 255 255 / 0.85);
+  --glass-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.22);
+}
+
+:root[data-blur="reduced"] {
+  --glass-blur: 10px;
+  --glass-alpha: 80%;
+  --liquid-alpha: 66%;
+}
+
+/* "Better performance for glass": cheap blur, no saturation pass, mostly opaque */
+:root[data-glass-perf="on"] {
+  --glass-blur: 8px;
+  --glass-sat: 100%;
+  --glass-alpha: 88%;
+  --liquid-alpha: 84%;
+}
+
+/* Animation speed: Off */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* Registered so the per-title accent can animate smoothly between posters */
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c7c7c7;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-base);
+    /* Always reserve the scrollbar's space: otherwise short pages (Together, Library) lose
+       the scrollbar, the viewport widens, and the full-width navbar jumps wider. */
+    scrollbar-gutter: stable;
+  }
+  body {
+    background-color: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* ---------- Glass ---------- */
+@layer components {
+  /* Frosted (Liquid glass off) */
+  .glass {
+    background-color: color-mix(in oklab, var(--color-card) var(--glass-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border: 1px solid color-mix(in oklab, var(--color-tint) 9%, transparent);
+  }
+
+  /* Liquid glass: clearer body, light-catching rim and sheen */
+  :root[data-liquid="on"] .glass {
+    background:
+      linear-gradient(
+        165deg,
+        color-mix(in oklab, var(--highlight) 55%, transparent) 0%,
+        transparent 38%,
+        transparent 70%,
+        color-mix(in oklab, var(--highlight) 18%, transparent) 100%
+      ),
+      color-mix(in oklab, var(--color-card) var(--liquid-alpha), transparent);
+    border-color: color-mix(in oklab, var(--color-tint) 12%, transparent);
+    box-shadow:
+      inset 0 1px 0 0 var(--highlight),
+      inset 0 -1px 0 0 color-mix(in oklab, var(--highlight) 30%, transparent),
+      inset 0 0 18px 0 color-mix(in oklab, var(--highlight) 12%, transparent),
+      var(--glass-shadow);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(1.04);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(1.04);
+  }
+
+  /* Floating elements without liquid glass still get a soft drop shadow */
+  .glass-float {
+    box-shadow: var(--glass-shadow);
+  }
+}
+
+/* ---------- Utilities ---------- */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- Poster-driven accent theming ---------- */
+.accent-scope {
+  transition: --accent calc(700ms * var(--motion-scale)) ease;
+}
+
+.pick-wash {
+  background:
+    radial-gradient(120% 75% at 0% 0%, color-mix(in oklab, var(--accent) 45%, transparent), transparent 62%),
+    linear-gradient(to top, var(--color-card) 6%, color-mix(in oklab, var(--color-card) 60%, transparent) 55%, transparent);
+}
+
+.poster-glow {
+  box-shadow:
+    0 30px 60px -22px color-mix(in oklab, var(--accent) 75%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--color-tint) 6%, transparent);
+}
+
+.accent-chip {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: color-mix(in oklab, var(--accent) 60%, var(--color-ink));
+}
+
+.accent-btn {
+  background: var(--accent);
+  color: var(--color-night);
+  box-shadow: 0 10px 28px -10px var(--accent);
+}
+
+.accent-text {
+  color: color-mix(in oklab, var(--accent) 65%, var(--color-ink));
+}
+
+/* ---------- Time-fit slider ---------- */
+.vibe-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 10px;
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-tint) 28%, transparent) 0%,
+    var(--color-ink) var(--pct),
+    color-mix(in oklab, var(--color-tint) 9%, transparent) var(--pct)
+  );
+}
+.vibe-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--color-tint) 16%, transparent),
+    0 6px 16px rgb(0 0 0 / 0.45);
+  transition: transform 150ms ease;
+}
+.vibe-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.vibe-range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--color-tint) 16%, transparent),
+    0 6px 16px rgb(0 0 0 / 0.45);
+}
+.vibe-range:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 6px;
+}
+:root[data-blur="reduced"] {
+  --pb-scale: 0.5;
+}
