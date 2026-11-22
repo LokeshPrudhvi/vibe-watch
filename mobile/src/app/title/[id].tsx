@@ -1,12 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import CalendarClock from "lucide-react-native/icons/calendar-clock";
 import Clapperboard from "lucide-react-native/icons/clapperboard";
 import EyeOff from "lucide-react-native/icons/eye-off";
@@ -33,7 +32,7 @@ import {
   type Provider,
 } from "@shared/tmdb";
 import { ErrorCard, FeedbackButtons, MatchRing } from "@/components/Feedback";
-import { IconButton } from "@/components/Header";
+import { TopBar, useHeaderScroll } from "@/components/Header";
 import { Poster, PosterRow } from "@/components/Posters";
 import { Card, Chip, Empty, SectionTitle, Skeleton, Tap, Txt } from "@/components/ui";
 import { openTrailer } from "@/components/home/TonightPick";
@@ -65,21 +64,16 @@ export default function TitleScreen() {
   const notFound = !valid || (error instanceof ApiError && error.status === 404);
   const poster = params.poster || data?.poster_path || null;
   const accent = useAccent(poster);
-  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/"));
   const hero = Math.round(height * 0.58);
   const posterW = Math.min(260, Math.round(width * 0.56));
-
-  const back = (
-    <View style={{ position: "absolute", top: insets.top + 8, left: 16 }}>
-      <IconButton Icon={ArrowLeft} label="Back" onPress={goBack} solid />
-    </View>
-  );
+  // bar turns solid once the poster is half gone; the small title appears when the big one passes under it
+  const header = useHeaderScroll(posterW * 1.5 + 40, posterW * 0.75);
 
   if (notFound) {
     return (
       <View style={{ flex: 1, backgroundColor: c.base, paddingTop: insets.top + 72, paddingHorizontal: 16 }}>
         <Empty text="We couldn't find that movie. It may have been removed from TMDB." />
-        {back}
+        <TopBar title="Title not found" scrolled={false} collapsed={false} back settings={false} />
       </View>
     );
   }
@@ -89,7 +83,12 @@ export default function TitleScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: c.base }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}>
+      <ScrollView
+        onScroll={header.onScroll}
+        scrollEventThrottle={32}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
+      >
         {/* cinematic backdrop fading into the page */}
         <View style={[styles.hero, { height: hero }]} pointerEvents="none">
           {data?.backdrop_path && (
@@ -154,7 +153,7 @@ export default function TitleScreen() {
           )}
         </View>
       </ScrollView>
-      {back}
+      <TopBar title={data?.title ?? ""} scrolled={header.scrolled} collapsed={header.collapsed} back settings={false} />
     </View>
   );
 }

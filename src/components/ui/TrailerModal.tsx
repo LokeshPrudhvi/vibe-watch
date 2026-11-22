@@ -33,7 +33,7 @@ export function TrailerModal({ open, videoKey, title, onClose }: Props) {
     <AnimatePresence>
       {open && videoKey && (
         <motion.div
-          className="glass fixed inset-0 z-50 grid place-items-center p-4"
+          className="glass-bar fixed inset-0 z-50 grid place-items-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

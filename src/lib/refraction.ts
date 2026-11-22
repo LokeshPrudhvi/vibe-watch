@@ -6,7 +6,7 @@
  * centre, with the strength rising steeply at the rim, like light bending through the
  * curved edge of a thick piece of glass. The flat middle stays undistorted.
  */
-export function displacementMap(w: number, h: number, r: number, bezel = Math.min(18, h / 2.5)) {
+export function displacementMap(w: number, h: number, r: number, bezel = Math.min(26, h / 2.3)) {
   const W = Math.max(1, Math.round(w));
   const H = Math.max(1, Math.round(h));
   const canvas = document.createElement("canvas");

@@ -40,9 +40,20 @@
   --glass-blur: 24px;
   --glass-sat: 170%;
   --glass-alpha: 62%; /* frosted */
-  --liquid-alpha: 38%; /* liquid */
   --highlight: rgb(255 255 255 / 0.22);
   --glass-shadow: 0 14px 36px -10px rgb(0 0 0 / 0.55);
+
+  /* liquid glass (Kyant0/backdrop-style, as in BitChord): a THIN blur so what's behind stays
+     legible, strong vibrancy, a lens rim, specular edge light, inner highlight, soft shadow */
+  --liquid-alpha: 14%;
+  --liquid-blur: 5px;
+  --liquid-sat: 190%;
+  --liquid-bright: 1.1;
+  --rim-light: rgb(255 255 255 / 0.7);
+  --rim-dim: rgb(255 255 255 / 0.08);
+  --inner-light: rgb(255 255 255 / 0.28);
+  --pill-top: rgb(255 255 255 / 0.2);
+  --pill-bottom: rgb(255 255 255 / 0.06);
 }
 
 :root[data-theme="light"] {
@@ -58,15 +69,23 @@
   --color-time: #1f1f1f;
   --color-match: #1fa855;
   --glass-alpha: 70%;
-  --liquid-alpha: 50%;
   --highlight: rgb(255 255 255 / 0.85);
   --glass-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.22);
+  --liquid-alpha: 34%;
+  --liquid-sat: 160%;
+  --liquid-bright: 1.04;
+  --rim-light: rgb(255 255 255 / 1);
+  --rim-dim: rgb(0 0 0 / 0.06);
+  --inner-light: rgb(255 255 255 / 0.9);
+  --pill-top: rgb(255 255 255 / 0.95);
+  --pill-bottom: rgb(255 255 255 / 0.55);
 }
 
 :root[data-blur="reduced"] {
   --glass-blur: 10px;
   --glass-alpha: 80%;
-  --liquid-alpha: 66%;
+  --liquid-blur: 2px;
+  --liquid-alpha: 55%;
 }
 
 /* "Better performance for glass": cheap blur, no saturation pass, mostly opaque */
@@ -74,7 +93,10 @@
   --glass-blur: 8px;
   --glass-sat: 100%;
   --glass-alpha: 88%;
-  --liquid-alpha: 84%;
+  --liquid-blur: 6px;
+  --liquid-sat: 100%;
+  --liquid-bright: 1;
+  --liquid-alpha: 78%;
 }
 
 /* Animation speed: Off */
@@ -117,38 +139,80 @@
 
 /* ---------- Glass ---------- */
 @layer components {
-  /* Frosted (Liquid glass off) */
-  .glass {
+  /* Frosted (Liquid glass off), and always for full-width bars/overlays via .glass-bar */
+  .glass,
+  .glass-bar {
     background-color: color-mix(in oklab, var(--color-card) var(--glass-alpha), transparent);
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     border: 1px solid color-mix(in oklab, var(--color-tint) 9%, transparent);
   }
+  .glass-bar {
+    border-width: 0 0 1px;
+  }
 
-  /* Liquid glass: clearer body, light-catching rim and sheen */
+  /* Liquid glass: nearly clear body, vivid backdrop, light-catching lens rim */
   :root[data-liquid="on"] .glass {
+    position: relative; /* for the rim; fixed/absolute/sticky utilities still win */
+    border-color: transparent;
     background:
-      linear-gradient(
-        165deg,
-        color-mix(in oklab, var(--highlight) 55%, transparent) 0%,
-        transparent 38%,
-        transparent 70%,
-        color-mix(in oklab, var(--highlight) 18%, transparent) 100%
-      ),
+      radial-gradient(130% 90% at 25% -10%, color-mix(in oklab, var(--inner-light) 45%, transparent), transparent 55%),
       color-mix(in oklab, var(--color-card) var(--liquid-alpha), transparent);
-    border-color: color-mix(in oklab, var(--color-tint) 12%, transparent);
     box-shadow:
-      inset 0 1px 0 0 var(--highlight),
-      inset 0 -1px 0 0 color-mix(in oklab, var(--highlight) 30%, transparent),
-      inset 0 0 18px 0 color-mix(in oklab, var(--highlight) 12%, transparent),
-      var(--glass-shadow);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(1.04);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(1.04);
+      inset 0 1.5px 1px -0.5px var(--inner-light),
+      inset 0 -1px 1px 0 color-mix(in oklab, var(--inner-light) 35%, transparent),
+      inset 0 0 22px -4px color-mix(in oklab, var(--inner-light) 30%, transparent),
+      0 12px 32px -10px rgb(0 0 0 / 0.55),
+      0 3px 8px -2px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-sat)) brightness(var(--liquid-bright));
+    -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-sat)) brightness(var(--liquid-bright));
+  }
+  /* specular rim: bright where the light hits (top-left, and a kick bottom-right), dim elsewhere */
+  :root[data-liquid="on"] .glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.25px;
+    pointer-events: none;
+    background: linear-gradient(
+      135deg,
+      var(--rim-light) 0%,
+      var(--rim-dim) 28%,
+      transparent 50%,
+      var(--rim-dim) 72%,
+      color-mix(in oklab, var(--rim-light) 55%, transparent) 100%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* the selected-tab pill: a small lens inside the bar */
+  .glass-pill {
+    background: color-mix(in oklab, var(--color-tint) 10%, transparent);
+  }
+  :root[data-liquid="on"] .glass-pill {
+    background: linear-gradient(180deg, var(--pill-top), var(--pill-bottom));
+    box-shadow:
+      inset 0 1px 0.5px 0 color-mix(in oklab, var(--inner-light) 90%, transparent),
+      inset 0 -1px 0.5px 0 color-mix(in oklab, var(--inner-light) 20%, transparent),
+      0 6px 16px -8px rgb(0 0 0 / 0.55);
   }
 
   /* Floating elements without liquid glass still get a soft drop shadow */
   .glass-float {
     box-shadow: var(--glass-shadow);
+  }
+  :root[data-liquid="on"] .glass-float {
+    box-shadow:
+      inset 0 1.5px 1px -0.5px var(--inner-light),
+      inset 0 -1px 1px 0 color-mix(in oklab, var(--inner-light) 35%, transparent),
+      inset 0 0 22px -4px color-mix(in oklab, var(--inner-light) 30%, transparent),
+      0 14px 36px -10px rgb(0 0 0 / 0.6),
+      0 3px 8px -2px rgb(0 0 0 / 0.25);
   }
 }
 
@@ -193,12 +257,31 @@
 }
 
 /* ---------- Time-fit slider ---------- */
+/* 36px-tall touch target, 10px painted track: easy to grab with a thumb. touch-action: none
+   stops the page scrolling under a finger that's dragging the slider. */
 .vibe-range {
   -webkit-appearance: none;
   appearance: none;
+  height: 36px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.vibe-range::-webkit-slider-runnable-track {
   height: 10px;
   border-radius: 999px;
-  outline: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-tint) 28%, transparent) 0%,
+    var(--color-ink) var(--pct),
+    color-mix(in oklab, var(--color-tint) 9%, transparent) var(--pct)
+  );
+}
+.vibe-range::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
   background: linear-gradient(
     90deg,
     color-mix(in oklab, var(--color-tint) 28%, transparent) 0%,
@@ -210,6 +293,7 @@
   -webkit-appearance: none;
   width: 26px;
   height: 26px;
+  margin-top: -8px; /* centre on the 10px track */
   border-radius: 999px;
   background: #fff;
   box-shadow:
@@ -232,7 +316,8 @@
 }
 .vibe-range:focus-visible {
   outline: 2px solid var(--color-ink);
-  outline-offset: 6px;
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 :root[data-blur="reduced"] {
   --pb-scale: 0.5;

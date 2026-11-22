@@ -15,6 +15,7 @@ import { Glass } from "@/components/Glass";
 import { Tap, Txt } from "@/components/ui";
 import { SPRING, useMotion } from "@/lib/motion";
 import { useSearch } from "@/store/ui";
+import { useEffectiveGlass } from "@/store/settings";
 import { BAR, alpha } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
@@ -108,7 +109,8 @@ function NavIcon({ Icon }: { Icon: typeof Search }) {
 const PAD = 6;
 
 function TabsPill({ active }: { active: number }) {
-  const { c } = useTheme();
+  const { c, dark } = useTheme();
+  const { liquid } = useEffectiveGlass();
   const motion = useMotion();
   const spring = motion.spring(SPRING.pill);
   const [width, setWidth] = useState(0);
@@ -131,7 +133,17 @@ function TabsPill({ active }: { active: number }) {
     <View style={[styles.fill, { flexDirection: "row", padding: PAD }]} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {tabW > 0 && active >= 0 && (
         <Animated.View
-          style={[styles.pill, { width: tabW, top: PAD, bottom: PAD, left: PAD, backgroundColor: alpha(c.tint, 0.1) }, pill]}
+          style={[
+            styles.pill,
+            { width: tabW, top: PAD, bottom: PAD, left: PAD, backgroundColor: alpha(c.tint, liquid ? 0.12 : 0.1) },
+            // liquid: a small lit lens inside the bar (top highlight + soft drop shadow)
+            liquid && {
+              borderTopWidth: StyleSheet.hairlineWidth * 2,
+              borderTopColor: alpha("#ffffff", dark ? 0.35 : 0.9),
+              boxShadow: `0 6px 16px -8px ${c.shadow}`,
+            },
+            pill,
+          ]}
         />
       )}
       {TABS.map(({ href, label, Icon }, i) => {

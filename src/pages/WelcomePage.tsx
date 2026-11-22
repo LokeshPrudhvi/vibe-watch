@@ -334,7 +334,6 @@ function RoundButton({
       title={label}
       onClick={onClick}
       disabled={disabled}
-      whileHover={{ scale: 1.06 }}
       whileTap={{ scale: 0.86 }}
       style={{
         scale,

@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { Linking, StyleSheet, View, useWindowDimensions } from "react-native";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
+import { scheduleOnRN } from "react-native-worklets";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { Extrapolation, FadeInDown, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Bookmark from "lucide-react-native/icons/bookmark";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Clapperboard from "lucide-react-native/icons/clapperboard";
 import Moon from "lucide-react-native/icons/moon";
 import Play from "lucide-react-native/icons/play";
@@ -19,6 +24,7 @@ import { availability, pickTrailer, yearOf, type Provider } from "@shared/tmdb";
 import { FeedbackButtons, MatchRing } from "@/components/Feedback";
 import { Poster, openTitle } from "@/components/Posters";
 import { Card, Chip, Skeleton, Tap, Txt } from "@/components/ui";
+import { Glass } from "@/components/Glass";
 import { useAccent, useMovie } from "@/hooks/tmdb";
 import { useNow } from "@/hooks/useUtils";
 import { backdropUri, logoUri } from "@/lib/images";
@@ -33,7 +39,20 @@ export const openTrailer = (key: string) => Linking.openURL(`https://www.youtube
  * Tonight's pick, themed by its poster. The ambient backdrop is a tiny w300 image blurred once
  * at decode time, never a live blur, so it costs nothing while scrolling.
  */
-export function TonightPick({ rec, loading, refreshing }: { rec?: Recommendation; loading: boolean; refreshing: boolean }) {
+export type NextAction = "skip" | "save";
+
+export function TonightPick({
+  rec,
+  loading,
+  refreshing,
+  onNext,
+}: {
+  rec?: Recommendation;
+  loading: boolean;
+  refreshing: boolean;
+  /** move on: "skip" = not tonight (teaches the recommender), "save" = keep it in the Library */
+  onNext: (action: NextAction) => void;
+}) {
   const { c, dark } = useTheme();
   const signal = useVibeStore((s) => s.signal);
   const motion = useMotion();
@@ -77,17 +96,19 @@ export function TonightPick({ rec, loading, refreshing }: { rec?: Recommendation
       />
 
       <View style={{ padding: 16, gap: 18 }}>
-        <Tap
-          scaleTo={0.97}
-          accessibilityLabel={`Open ${movie.title}`}
-          onPress={() => {
+        <SwipePoster
+          key={movie.id}
+          title={movie.title}
+          path={movie.poster_path}
+          id={movie.id}
+          width={posterW}
+          glow={alpha(accent, 0.75)}
+          onOpen={() => {
             signal("open", lite);
             openTitle(movie.id, movie.poster_path);
           }}
-          style={{ alignSelf: "center", borderRadius: 24, boxShadow: `0 30px 60px -22px ${alpha(accent, 0.75)}` }}
-        >
-          <Poster path={movie.poster_path} width={posterW} radius={24} id={movie.id} />
-        </Tap>
+          onNext={onNext}
+        />
 
         <View style={{ gap: 14 }}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -167,7 +188,7 @@ export function TonightPick({ rec, loading, refreshing }: { rec?: Recommendation
               accessibilityLabel="Pick something else"
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                signal("skip", lite); // nudges this title down for a few days → the next best fit moves up
+                onNext("skip"); // nudges this title down for a few days → the next best fit moves up
               }}
               style={[styles.round, { backgroundColor: alpha(c.tint, 0.08) }]}
             >
@@ -246,9 +267,139 @@ function EmptyPick() {
 }
 
 const styles = StyleSheet.create({
+  stamp: {
+    position: "absolute",
+    top: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 3,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  stampLeft: { left: 12 },
+  stampRight: { right: 12 },
+  stampText: { color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: 1 },
+  nextBtn: { position: "absolute", right: -12, top: "42%" },
+  nextGlass: { height: 44, flexDirection: "row", alignItems: "center", gap: 2, paddingLeft: 14, paddingRight: 8 },
   card: { marginHorizontal: 16, borderRadius: 32, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
   badge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   trailer: { height: 48, borderRadius: 999, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", gap: 8 },
   apps: { height: 44, borderRadius: 999, paddingLeft: 6, paddingRight: 16, flexDirection: "row", alignItems: "center", gap: 8 },
   round: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
 });
+
+/**
+ * The pick's poster, swipeable: left = next pick, right = save + next, tap = open. Only a
+ * horizontal drag activates (activeOffsetX), and a vertical one fails it (failOffsetY), so
+ * the page still scrolls. A Next button on the poster does the same without a swipe.
+ *
+ * UI-thread callbacks only touch shared values and hand the rest to JS via scheduleOnRN:
+ * calling plain JS functions from a worklet is what crashed the slider.
+ */
+function SwipePoster({
+  title,
+  path,
+  id,
+  width,
+  glow,
+  onOpen,
+  onNext,
+}: {
+  title: string;
+  path: string | null;
+  id: number;
+  width: number;
+  glow: string;
+  onOpen: () => void;
+  onNext: (action: NextAction) => void;
+}) {
+  const { c } = useTheme();
+  const motion = useMotion();
+  const { width: screenW } = useWindowDimensions();
+  const x = useSharedValue(0);
+  const gone = useSharedValue(false);
+  const [flying, setFlying] = useState(false);
+  const back = motion.spring({ stiffness: 420, damping: 32 });
+  const flyMs = motion.duration(240);
+
+  const fly = (action: NextAction) => {
+    if (gone.get()) return;
+    gone.set(true);
+    setFlying(true);
+    Haptics.impactAsync(action === "save" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+    const to = (action === "save" ? 1 : -1) * (screenW + 200);
+    if (!flyMs) return onNext(action);
+    x.set(
+      withTiming(to, { duration: flyMs }, (finished) => {
+        "worklet";
+        if (finished) scheduleOnRN(onNext, action);
+      }),
+    );
+  };
+
+  const pan = usePanGesture({
+    activeOffsetX: [-12, 12],
+    failOffsetY: [-14, 14],
+    onUpdate: (e) => {
+      "worklet";
+      if (!gone.get()) x.set(e.translationX);
+    },
+    onDeactivate: (e) => {
+      "worklet";
+      if (gone.get()) return;
+      if (e.translationX < -90 || e.velocityX < -600) scheduleOnRN(fly, "skip");
+      else if (e.translationX > 90 || e.velocityX > 600) scheduleOnRN(fly, "save");
+      else x.set(back ? withSpring(0, back) : 0);
+    },
+  });
+
+  const card = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.get() }, { rotate: `${(x.get() / 260) * 9}deg` }],
+  }));
+  const nextStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [-110, -20], [1, 0], Extrapolation.CLAMP) }));
+  const saveStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [20, 110], [0, 1], Extrapolation.CLAMP) }));
+
+  return (
+    <View style={{ alignSelf: "center", width }}>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={card}>
+          <Tap
+            scaleTo={0.97}
+            accessibilityLabel={`Open ${title}. Swipe left for the next pick, right to save it.`}
+            onPress={onOpen}
+            style={{ borderRadius: 24, boxShadow: `0 30px 60px -22px ${glow}` }}
+          >
+            <Poster path={path} width={width} radius={24} id={id} />
+          </Tap>
+          <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, { borderColor: c.ink }, nextStamp]}>
+            <Txt variant="label" style={styles.stampText}>
+              NEXT
+            </Txt>
+          </Animated.View>
+          <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampRight, { borderColor: c.match }, saveStamp]}>
+            <Bookmark size={14} color={c.match} fill={c.match} />
+            <Txt variant="label" style={[styles.stampText, { color: c.match }]}>
+              SAVE
+            </Txt>
+          </Animated.View>
+        </Animated.View>
+      </GestureDetector>
+      {!flying && (
+        <Tap scaleTo={0.9} accessibilityLabel="Next pick" onPress={() => fly("skip")} style={styles.nextBtn}>
+          <Glass radius={22} interactive style={styles.nextGlass}>
+            <Txt variant="label" style={{ fontWeight: "700" }}>
+              Next
+            </Txt>
+            <ChevronRight size={18} color={c.ink} />
+          </Glass>
+        </Tap>
+      )}
+      <Txt variant="caption" muted style={{ textAlign: "center", marginTop: 10 }}>
+        ← next pick · save →
+      </Txt>
+    </View>
+  );
+}

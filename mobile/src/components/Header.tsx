@@ -16,12 +16,12 @@ const ROW = 52;
  * Scroll state for the large-title header. Only flips two booleans (React skips the re-render
  * when they don't change); the fades themselves run on the UI thread.
  */
-export function useHeaderScroll(threshold = 56) {
+export function useHeaderScroll(threshold = 56, solidAt = 4) {
   const [scrolled, setScrolled] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = e.nativeEvent.contentOffset.y;
-    setScrolled(y > 4);
+    setScrolled(y > solidAt);
     setCollapsed(y > threshold);
   };
   return { scrolled, collapsed, onScroll };
@@ -88,7 +88,14 @@ export function TopBar({
         ]}
       />
       <View style={[styles.row, { marginTop: insets.top + 4 }]}>
-        {back && <IconButton label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} Icon={ArrowLeft} />}
+        {back && (
+          <IconButton
+            label="Back"
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
+            Icon={ArrowLeft}
+            solid={!scrolled}
+          />
+        )}
         <Animated.Text
           numberOfLines={1}
           accessibilityElementsHidden={!collapsed}

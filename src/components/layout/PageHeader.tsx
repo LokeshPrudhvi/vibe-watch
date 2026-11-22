@@ -38,9 +38,8 @@ export function PageHeader({ title, eyebrow, action }: { title: string; eyebrow?
       <div
         ref={bar}
         className={`sticky top-0 z-30 transition-[background-color,border-color] duration-(--dur-slow) ${
-          solid ? "glass rounded-none !border-x-0 !border-t-0" : "border-b border-transparent"
+          solid ? "glass-bar" : "border-b border-transparent"
         }`}
-        style={solid ? { boxShadow: "none" } : undefined}
       >
         <div className="flex h-[calc(env(safe-area-inset-top)+60px)] items-end justify-between gap-3 px-4 pb-2 pt-[env(safe-area-inset-top)] md:px-8">
           <p

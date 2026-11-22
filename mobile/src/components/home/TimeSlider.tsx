@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,15 +19,23 @@ const STEP = 5;
 const THUMB = 26;
 const SLIDE = { stiffness: 380, damping: 32 };
 
-const toPct = (m: number) => (m - TIME_MIN) / (TIME_MAX - TIME_MIN);
+// Called from gesture callbacks on the UI thread, so it must be a worklet: calling a plain JS
+// function there throws, which crashed the release APK the moment a finger left the slider.
+const toPct = (m: number) => {
+  "worklet";
+  return (m - TIME_MIN) / (TIME_MAX - TIME_MIN);
+};
 
 /**
- * "I've got 2h 10m". The thumb follows your finger on the UI thread; React only hears about it
- * when the value crosses a 5-minute step (with a haptic tick), so dragging never drops frames.
+ * "I've got 2h 10m". The thumb follows your finger on the UI thread; while dragging only this
+ * card's label updates (a local draft, with a haptic tick per 5-minute step). The store, and
+ * with it the Tonight pick and its TMDB queries, gets the value once the finger lifts.
  */
 export function TimeSlider() {
   const { c } = useTheme();
-  const minutes = useVibeStore((s) => s.minutes);
+  const stored = useVibeStore((s) => s.minutes);
+  const [draft, setDraft] = useState<number | null>(null);
+  const minutes = draft ?? stored;
   const setMinutes = useVibeStore((s) => s.setMinutes);
   const now = useNow();
   const motion = useMotion();
@@ -39,16 +47,20 @@ export function TimeSlider() {
   const dragging = useSharedValue(false);
 
   const onStep = (m: number) => {
-    setMinutes(m);
+    setDraft(m);
     Haptics.selectionAsync();
   };
+  const onRelease = (m: number) => {
+    setMinutes(m);
+    setDraft(null);
+  };
 
-  // external changes (presets, accessibility actions) glide the thumb
+  // external changes (presets, accessibility actions, the committed drag) glide the thumb
   useEffect(() => {
     if (dragging.get()) return;
-    step.set(minutes);
-    pos.set(spring ? withSpring(toPct(minutes), spring) : toPct(minutes));
-  }, [minutes, spring, pos, step, dragging]);
+    step.set(stored);
+    pos.set(spring ? withSpring(toPct(stored), spring) : toPct(stored));
+  }, [stored, spring, pos, step, dragging]);
 
   const follow = (x: number) => {
     "worklet";
@@ -77,8 +89,10 @@ export function TimeSlider() {
     onFinalize: () => {
       "worklet";
       dragging.set(false);
-      const to = toPct(step.get());
+      const m = step.get();
+      const to = toPct(m);
       pos.set(spring ? withSpring(to, spring) : to);
+      scheduleOnRN(onRelease, m);
     },
   });
 

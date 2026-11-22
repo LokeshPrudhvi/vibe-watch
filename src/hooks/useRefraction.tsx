@@ -13,7 +13,7 @@ interface MapState {
  *
  * `strength` is the max shift in px at the rim.
  */
-export function useRefraction<T extends HTMLElement>(enabled: boolean, strength = 34) {
+export function useRefraction<T extends HTMLElement>(enabled: boolean, strength = 46) {
   // callback ref: the navbar swaps elements when it morphs into search mode
   const [el, ref] = useState<T | null>(null);
   const id = `refract-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
@@ -70,7 +70,7 @@ export function useRefraction<T extends HTMLElement>(enabled: boolean, strength 
     </svg>
   ) : null;
 
-  const value = `url(#${id}) blur(calc(var(--glass-blur) * 0.35)) saturate(var(--glass-sat)) brightness(1.05)`;
+  const value = `url(#${id}) blur(var(--liquid-blur)) saturate(var(--liquid-sat)) brightness(var(--liquid-bright))`;
   const style: CSSProperties | undefined = active ? { backdropFilter: value, WebkitBackdropFilter: value } : undefined;
 
   return { ref, filter, style };

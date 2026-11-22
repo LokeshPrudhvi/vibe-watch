@@ -131,7 +131,7 @@ export function BottomNav() {
                       {isActive && (
                         <motion.span
                           layoutId="nav-active"
-                          className="absolute inset-0 rounded-full bg-tint/10"
+                          className="glass-pill absolute inset-0 rounded-full"
                           transition={speed({ type: "spring", stiffness: 500, damping: 38 })}
                         />
                       )}

@@ -1,7 +1,7 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router";
-import { motion } from "motion/react";
-import { Clapperboard, Moon, Play, Shuffle, Sparkles, Star, Tv, Wand2 } from "lucide-react";
+import { animate, motion, useMotionValue, useTransform } from "motion/react";
+import { Bookmark, ChevronRight, Clapperboard, Moon, Play, Shuffle, Sparkles, Star, Tv, Wand2 } from "lucide-react";
 import { useMovie } from "@/hooks/useTmdb";
 import { usePosterAccent } from "@/hooks/usePosterAccent";
 import { useNow } from "@/hooks/useUtils";
@@ -16,14 +16,17 @@ import { MatchRing } from "@/components/ui/MatchRing";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TrailerModal } from "@/components/ui/TrailerModal";
 
+export type NextAction = "skip" | "save";
+
 interface Props {
   rec?: Recommendation;
   loading: boolean;
   refreshing: boolean;
-  onShuffle?: () => void;
+  /** move on to the next pick: "skip" = not tonight, "save" = keep it for later */
+  onNext: (action: NextAction) => void;
 }
 
-export function TonightPick({ rec, loading, refreshing, onShuffle }: Props) {
+export function TonightPick({ rec, loading, refreshing, onNext }: Props) {
   const navigate = useNavigate();
   const signal = useVibeStore((s) => s.signal);
   const speed = useMotionSpeed();
@@ -65,14 +68,10 @@ export function TonightPick({ rec, loading, refreshing, onShuffle }: Props) {
       <div aria-hidden className="pick-wash absolute inset-0 -z-10" />
 
       <div className="flex flex-col gap-5 p-4 sm:p-6 md:flex-row md:items-end md:gap-7">
-        <button onClick={open} className="group mx-auto w-[62%] max-w-[260px] shrink-0 md:mx-0 md:w-56" aria-label={`Open ${movie.title}`}>
-          <motion.img
-            layoutId={layoutId}
-            src={tmdbImage(movie.poster_path, "w500")}
-            alt={`${movie.title} poster`}
-            className="poster-glow aspect-[2/3] w-full rounded-3xl object-cover"
-          />
-        </button>
+        <div className="mx-auto w-[58%] max-w-[260px] shrink-0 md:mx-0 md:w-56">
+          <SwipePoster title={movie.title} poster={movie.poster_path} layoutId={layoutId} onOpen={open} onNext={onNext} />
+          <p className="mt-2.5 text-center text-[11px] font-medium text-muted md:hidden">← next pick · save →</p>
+        </div>
 
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -130,10 +129,7 @@ export function TonightPick({ rec, loading, refreshing, onShuffle }: Props) {
             <AppsPill loading={details.isLoading} watch={watch} rentCount={rent.length} />
             <motion.button
               whileTap={{ scale: 0.9, rotate: -20 }}
-              onClick={() => {
-                signal("skip", lite); // nudges this title down for a few days
-                onShuffle?.();
-              }}
+              onClick={() => onNext("skip")}
               aria-label="Pick something else"
               className="grid size-11 place-items-center rounded-full bg-tint/8 transition hover:bg-tint/15"
             >
@@ -216,6 +212,101 @@ function EmptyPick() {
     <div className="rounded-[32px] bg-card p-8 text-center ring-1 ring-tint/5">
       <p className="font-display text-2xl font-bold">Nothing fits just yet</p>
       <p className="mt-2 text-sm text-muted">Give yourself a little more time, or try another vibe.</p>
+    </div>
+  );
+}
+
+/**
+ * The pick's poster, swipeable: left = next pick, right = save + next, tap = open. Only
+ * horizontal drags are captured, so the page still scrolls vertically under a thumb.
+ * A Next button on the poster gives the same thing without a swipe.
+ */
+function SwipePoster({
+  title,
+  poster,
+  layoutId,
+  onOpen,
+  onNext,
+}: {
+  title: string;
+  poster: string | null;
+  layoutId: string;
+  onOpen: () => void;
+  onNext: (action: NextAction) => void;
+}) {
+  const speed = useMotionSpeed();
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-260, 0, 260], [-9, 0, 9]);
+  const nextOpacity = useTransform(x, [-110, -20], [1, 0]);
+  const saveOpacity = useTransform(x, [20, 110], [0, 1]);
+  const dragged = useRef(false);
+  const [flying, setFlying] = useState(false);
+
+  const fly = (action: NextAction, velocity = 0) => {
+    if (flying) return;
+    setFlying(true);
+    try {
+      navigator.vibrate?.(action === "save" ? [8, 30, 10] : 10);
+    } catch {
+      /* no vibration API */
+    }
+    const to = (action === "save" ? 1 : -1) * (window.innerWidth + 300);
+    animate(x, to, speed({ type: "spring", stiffness: 300, damping: 32, velocity })).then(() => onNext(action));
+  };
+
+  return (
+    <div className="relative">
+      <motion.div
+        role="link"
+        tabIndex={0}
+        aria-label={`Open ${title}. Swipe left for the next pick, right to save it.`}
+        className="relative cursor-grab touch-pan-y select-none active:cursor-grabbing"
+        style={{ x, rotate }}
+        drag={flying ? false : "x"}
+        dragMomentum={false}
+        dragElastic={0.85}
+        onDragStart={() => (dragged.current = true)}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -90 || info.velocity.x < -600) fly("skip", info.velocity.x);
+          else if (info.offset.x > 90 || info.velocity.x > 600) fly("save", info.velocity.x);
+          else animate(x, 0, speed({ type: "spring", stiffness: 420, damping: 32 }));
+          setTimeout(() => (dragged.current = false), 0);
+        }}
+        onTap={() => !dragged.current && !flying && onOpen()}
+        onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      >
+        <motion.img
+          layoutId={layoutId}
+          src={tmdbImage(poster, "w500")}
+          alt={`${title} poster`}
+          draggable={false}
+          className="poster-glow pointer-events-none aspect-[2/3] w-full rounded-3xl object-cover"
+        />
+        <motion.span
+          aria-hidden
+          style={{ opacity: nextOpacity }}
+          className="pointer-events-none absolute left-3 top-3 rounded-xl border-[3px] border-ink bg-black/40 px-2 py-0.5 font-display text-lg font-extrabold tracking-wide text-white"
+        >
+          NEXT
+        </motion.span>
+        <motion.span
+          aria-hidden
+          style={{ opacity: saveOpacity }}
+          className="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-xl border-[3px] border-match bg-black/40 px-2 py-0.5 font-display text-lg font-extrabold tracking-wide text-match"
+        >
+          <Bookmark className="size-4 fill-current" /> SAVE
+        </motion.span>
+      </motion.div>
+      {!flying && (
+        <motion.button
+          whileTap={{ scale: 0.88 }}
+          onClick={() => fly("skip")}
+          aria-label="Next pick"
+          className="glass absolute -right-3 top-1/2 flex h-11 -translate-y-1/2 items-center gap-0.5 rounded-full pl-3.5 pr-2 text-sm font-bold text-ink"
+        >
+          Next <ChevronRight className="size-5" />
+        </motion.button>
+      )}
     </div>
   );
 }
