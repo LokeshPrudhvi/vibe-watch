@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Constants from "expo-constants";
 import { View } from "react-native";
 import Gauge from "lucide-react-native/icons/gauge";
 import Monitor from "lucide-react-native/icons/monitor";
@@ -106,6 +107,11 @@ export default function SettingsScreen() {
           Data and images from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming
           availability by JustWatch.
           {__DEV__ ? `\nServer: ${API_BASE}` : ""}
+        </Txt>
+        {/* so you can confirm an update really installed */}
+        <Txt variant="caption" muted style={{ textAlign: "center" }}>
+          vibe {Constants.expoConfig?.version ?? "?"}
+          {Constants.expoConfig?.android?.versionCode ? ` (build ${Constants.expoConfig.android.versionCode})` : ""}
         </Txt>
       </View>
     </Screen>

@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Linking, StyleSheet, View, useWindowDimensions } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import Animated, { Extrapolation, FadeInDown, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import Bookmark from "lucide-react-native/icons/bookmark";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Clapperboard from "lucide-react-native/icons/clapperboard";
@@ -62,6 +62,20 @@ export function TonightPick({
   const accent = useAccent(movie?.poster_path);
   const now = useNow();
 
+  // Fade + rise for each new pick. Not a layout "entering" animation: those sometimes never start
+  // on Android's new architecture when the view mounts mid-layout, leaving the card invisible.
+  // A timing on a shared value always lands on fully visible.
+  const shown = useSharedValue(0);
+  const fadeMs = motion.duration(450);
+  useEffect(() => {
+    shown.set(0);
+    shown.set(fadeMs ? withTiming(1, { duration: fadeMs }) : 1);
+  }, [movie?.id, fadeMs, shown]);
+  const enter = useAnimatedStyle(() => ({
+    opacity: shown.get() * (refreshing ? 0.7 : 1),
+    transform: [{ translateY: (1 - shown.get()) * 16 }],
+  }));
+
   if (loading) return <PickSkeleton />;
   if (!rec || !movie) return <EmptyPick />;
 
@@ -74,8 +88,7 @@ export function TonightPick({
   return (
     <Animated.View
       key={movie.id}
-      entering={motion.off ? undefined : FadeInDown.duration(motion.duration(450))}
-      style={[styles.card, { backgroundColor: c.card, borderColor: alpha(c.tint, 0.05), opacity: refreshing ? 0.7 : 1 }]}
+      style={[styles.card, { backgroundColor: c.card, borderColor: alpha(c.tint, 0.05) }, enter]}
     >
       <Image
         source={backdropUri(movie.backdrop_path)}
