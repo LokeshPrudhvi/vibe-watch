@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import Hourglass from "lucide-react-native/icons/hourglass";
 import Moon from "lucide-react-native/icons/moon";
 import { TIME_MAX, TIME_MIN } from "@shared/taste";
 import { addMinutes, formatClock, formatDuration, minutesUntil } from "@shared/time";
 import { useSurface } from "@/components/Glass";
-import { Card, Tap, Txt } from "@/components/ui";
+import { Sheet } from "@/components/Sheet";
+import { Tap, Txt } from "@/components/ui";
 import { useNow } from "@/hooks/useUtils";
 import { useMotion } from "@/lib/motion";
 import { useVibeStore } from "@/store/vibe";
@@ -28,11 +31,48 @@ const toPct = (m: number) => {
 };
 
 /**
- * "I've got 2h 10m". The thumb follows your finger on the UI thread; while dragging only this
- * card's label updates (a local draft, with a haptic tick per 5-minute step). The store, and
- * with it the Tonight pick and its TMDB queries, gets the value once the finger lifts.
+ * Time-fit on Home: one compact row ("I've got 2h 10m · done by 10:40 PM"), so the pick and its
+ * buttons fit on the first screen. Tapping it opens a sheet with the slider and presets.
  */
 export function TimeSlider() {
+  const { c } = useTheme();
+  const surface = useSurface();
+  const minutes = useVibeStore((s) => s.minutes);
+  const now = useNow();
+  const [open, setOpen] = useState(false);
+  const clock = formatClock(addMinutes(now, minutes));
+
+  return (
+    <View style={{ paddingHorizontal: 16 }}>
+      <Tap
+        scaleTo={0.98}
+        onPress={() => setOpen(true)}
+        accessibilityLabel={`Time-fit: ${formatDuration(minutes)}, done by ${clock}. Change`}
+        style={[styles.row, surface("chip")]}
+      >
+        <Hourglass size={16} color={c.time} />
+        <Txt variant="label" numberOfLines={1} style={{ flexShrink: 1 }}>
+          I&apos;ve got <Txt variant="label" style={{ color: c.time, fontWeight: "800" }}>{formatDuration(minutes)}</Txt>
+        </Txt>
+        <View style={{ flex: 1 }} />
+        <Txt variant="small" muted numberOfLines={1} style={{ fontVariant: ["tabular-nums"] }}>
+          done by {clock}
+        </Txt>
+        <ChevronDown size={16} color={c.muted} />
+      </Tap>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Time-fit">
+        <TimePanel />
+      </Sheet>
+    </View>
+  );
+}
+
+/**
+ * "I've got 2h 10m". The thumb follows your finger on the UI thread; while dragging only this
+ * panel's label updates (a local draft, with a haptic tick per 5-minute step). The store, and
+ * with it the Tonight pick and its TMDB queries, gets the value once the finger lifts.
+ */
+function TimePanel() {
   const { c } = useTheme();
   const surface = useSurface();
   const stored = useVibeStore((s) => s.minutes);
@@ -107,13 +147,10 @@ export function TimeSlider() {
   ].filter((p) => p.value >= TIME_MIN && p.value <= TIME_MAX);
 
   return (
-    <Card style={{ padding: 20, marginHorizontal: 16 }}>
+    <View style={{ paddingBottom: 4 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
-        <View style={{ flexShrink: 1 }}>
-          <Txt variant="eyebrow" muted>
-            Time-fit
-          </Txt>
-          <Txt variant="heading" style={{ fontSize: 24, lineHeight: 30, marginTop: 4 }}>
+        <View style={{ flexShrink: 1, justifyContent: "center" }}>
+          <Txt variant="heading" style={{ fontSize: 24, lineHeight: 30 }}>
             I&apos;ve got <Txt variant="heading" style={{ fontSize: 24, lineHeight: 30, color: c.time }}>{formatDuration(minutes)}</Txt>
           </Txt>
         </View>
@@ -202,6 +239,10 @@ export function TimeSlider() {
       <Txt variant="caption" muted style={{ marginTop: 14, fontSize: 12 }}>
         Only showing films that finish in time.
       </Txt>
-    </Card>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  row: { height: 44, borderRadius: 999, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 8 },
+});

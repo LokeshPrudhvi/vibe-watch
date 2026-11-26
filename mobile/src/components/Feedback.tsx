@@ -171,21 +171,24 @@ const ACTIONS: {
   type: MarkType;
   label: string;
   on: string;
+  /** label in the compact icon row, when it differs */
+  short?: string;
   Icon: typeof Heart;
   toast?: string;
   needsRelease?: boolean;
 }[] = [
   { type: "like", label: "Love", on: "Loved", Icon: Heart, needsRelease: true },
   { type: "save", label: "Save", on: "Saved", Icon: Bookmark },
-  { type: "seen", label: "Seen it", on: "Seen", Icon: Eye, toast: "Marked as seen. We won't suggest it again.", needsRelease: true },
+  { type: "seen", label: "Seen it", on: "Seen", short: "Seen", Icon: Eye, toast: "Marked as seen. We won't suggest it again.", needsRelease: true },
   { type: "dislike", label: "Not for me", on: "Hidden", Icon: ThumbsDown, toast: "Got it. Less like this from now on." },
 ];
 
 /**
- * The explicit feedback that trains the recommender.
+ * The explicit feedback that trains the recommender. `compact`: one row of equal icon buttons
+ * with small labels (the Tonight card).
  * A film that isn't out yet can only be saved or dismissed: nobody has seen or loved it.
  */
-export function FeedbackButtons({ movie }: { movie: MovieLite }) {
+export function FeedbackButtons({ movie, compact }: { movie: MovieLite; compact?: boolean }) {
   const mark = useVibeStore((s) => s.mark);
   const unmark = useVibeStore((s) => s.unmark);
   const marks = useVibeStore((s) => s.marks);
@@ -197,12 +200,13 @@ export function FeedbackButtons({ movie }: { movie: MovieLite }) {
   );
 
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+    <View style={compact ? { flexDirection: "row", gap: 6 } : { flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
       {visible.map((a) => (
         <FeedbackButton
           key={a.type}
           action={a}
           id={movie.id}
+          compact={compact}
           onToggle={(active) => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (active) return unmark(a.type, movie.id);
@@ -220,10 +224,12 @@ export function FeedbackButtons({ movie }: { movie: MovieLite }) {
 function FeedbackButton({
   action,
   id,
+  compact,
   onToggle,
 }: {
   action: (typeof ACTIONS)[number];
   id: number;
+  compact?: boolean;
   onToggle: (active: boolean) => void;
 }) {
   const { c } = useTheme();
@@ -231,6 +237,25 @@ function FeedbackButton({
   const active = useMarked(action.type, id);
   const { Icon } = action;
   const fg = active ? c.inverse : c.ink;
+  if (compact) {
+    return (
+      <Tap
+        scaleTo={0.9}
+        onPress={() => onToggle(active)}
+        accessibilityLabel={action.label}
+        accessibilityState={{ selected: active }}
+        style={[
+          { flex: 1, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 2 },
+          active ? { backgroundColor: c.ink } : surface("control"),
+        ]}
+      >
+        <Icon size={17} color={fg} fill={active && action.type === "like" ? fg : "none"} />
+        <Txt variant="caption" numberOfLines={1} style={{ fontSize: 10.5, lineHeight: 13, fontWeight: "600", color: fg }}>
+          {active ? action.on : (action.short ?? action.label)}
+        </Txt>
+      </Tap>
+    );
+  }
   return (
     <Tap
       scaleTo={0.92}

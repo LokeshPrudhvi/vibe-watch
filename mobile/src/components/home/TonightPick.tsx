@@ -1,31 +1,28 @@
-import { useEffect, useRef, useState, type ComponentRef, type RefObject } from "react";
+import { useEffect } from "react";
 import { Linking, StyleSheet, View, useWindowDimensions } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
-import { BlurTargetView } from "expo-blur";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from "react-native-reanimated";
 import Bookmark from "lucide-react-native/icons/bookmark";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Clapperboard from "lucide-react-native/icons/clapperboard";
 import Moon from "lucide-react-native/icons/moon";
 import Play from "lucide-react-native/icons/play";
-import Shuffle from "lucide-react-native/icons/shuffle";
 import Sparkles from "lucide-react-native/icons/sparkles";
 import Star from "lucide-react-native/icons/star";
 import Tv from "lucide-react-native/icons/tv";
 import Wand2 from "lucide-react-native/icons/wand-sparkles";
-import { GENRES } from "@shared/moods";
 import type { Recommendation } from "@shared/recommend";
 import { toLite } from "@shared/taste";
 import { addMinutes, formatClock, formatDuration } from "@shared/time";
 import { availability, pickTrailer, yearOf, type Provider } from "@shared/tmdb";
 import { FeedbackButtons, MatchRing } from "@/components/Feedback";
 import { Poster, openTitle } from "@/components/Posters";
-import { Card, Chip, Skeleton, Tap, Txt } from "@/components/ui";
-import { BlurTargetContext, Glass, useGlassInk, useLiquidSurfaces, useSurface } from "@/components/Glass";
+import { Card, Skeleton, Tap, Txt } from "@/components/ui";
+import { useLiquidSurfaces, useSurface } from "@/components/Glass";
 import { useAccent, useMovie } from "@/hooks/tmdb";
 import { useNow } from "@/hooks/useUtils";
 import { backdropUri, logoUri } from "@/lib/images";
@@ -38,17 +35,28 @@ export const openTrailer = (key: string) => Linking.openURL(`https://www.youtube
 
 export type NextAction = "skip" | "save";
 
+/** card padding */
+const PAD = 14;
+/** gaps between the card's rows */
+const GAP = 12;
+/** height of the button rows and the match ring */
+const ROW = 44;
+/** the overview's two lines, reserved even when it's shorter so nothing below moves */
+const OVERVIEW = 36;
+
 /**
- * The pick's poster width: 62% of the card, at most 260, and always leaving 44dp on each side
- * for the Next button, so it never has to sit on the artwork (even on 320dp-wide phones).
+ * The poster sits beside the info: 38% of the card's inner width, 104–150dp. With the two button
+ * rows that keeps the whole card around 360dp tall on a 360dp-wide phone, so Home fits one screen.
  */
 function pickPosterWidth(width: number) {
-  return Math.min(260, Math.round((width - 32) * 0.62), width - 64 - 88);
+  return Math.max(104, Math.min(150, Math.round((width - 32 - PAD * 2) * 0.38)));
 }
 
 /**
- * Tonight's pick, themed by its poster. The ambient backdrop is a tiny w300 image blurred once
- * at decode time, never a live blur, so it costs nothing while scrolling.
+ * Tonight's pick, compact enough that mood, time and every action fit above the navbar:
+ * poster + facts on top, a two-line overview, then Trailer / Next and one row of feedback icons
+ * with the match ring. Themed by its poster; the ambient backdrop is a tiny image blurred once at
+ * decode time, never a live blur.
  */
 export function TonightPick({
   rec,
@@ -62,50 +70,70 @@ export function TonightPick({
   /** move on: "skip" = not tonight (teaches the recommender), "save" = keep it in the Library */
   onNext: (action: NextAction) => void;
 }) {
+  if (loading) return <PickSkeleton />;
+  if (!rec) return <EmptyPick />;
+  // keyed per film: the swipe, fly-out and fade state start fresh for every pick
+  return <PickCard key={rec.movie.id} rec={rec} refreshing={refreshing} onNext={onNext} />;
+}
+
+function PickCard({ rec, refreshing, onNext }: { rec: Recommendation; refreshing: boolean; onNext: (action: NextAction) => void }) {
   const { c, dark } = useTheme();
   const surface = useSurface();
   const liquid = useLiquidSurfaces();
   const signal = useVibeStore((s) => s.signal);
   const motion = useMotion();
   const { width } = useWindowDimensions();
-  const backdrop = useRef<ComponentRef<typeof View>>(null);
-  const movie = rec?.movie;
-  const details = useMovie(movie?.id);
-  const accent = useAccent(movie?.poster_path);
+  const movie = rec.movie;
+  const details = useMovie(movie.id);
+  const accent = useAccent(movie.poster_path);
   const now = useNow();
 
   // Fade + rise for each new pick. Not a layout "entering" animation: those sometimes never start
   // on Android's new architecture when the view mounts mid-layout, leaving the card invisible.
   // A timing on a shared value always lands on fully visible.
-  const shown = useSharedValue(0);
   const fadeMs = motion.duration(450);
+  const shown = useSharedValue(fadeMs ? 0 : 1);
   useEffect(() => {
-    shown.set(0);
     shown.set(fadeMs ? withTiming(1, { duration: fadeMs }) : 1);
-  }, [movie?.id, fadeMs, shown]);
+  }, [fadeMs, shown]);
   const enter = useAnimatedStyle(() => ({
     opacity: shown.get() * (refreshing ? 0.7 : 1),
     transform: [{ translateY: (1 - shown.get()) * 16 }],
   }));
 
-  if (loading) return <PickSkeleton />;
-  if (!rec || !movie) return <EmptyPick />;
+  // the poster's swipe: left = next, right = save + next; the Next button flies it the same way
+  const x = useSharedValue(0);
+  const gone = useSharedValue(false);
+  const flyMs = motion.duration(240);
+  const fly = (action: NextAction) => {
+    if (gone.get()) return;
+    gone.set(true);
+    Haptics.impactAsync(action === "save" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+    if (!flyMs) return onNext(action);
+    x.set(
+      withTiming((action === "save" ? 1 : -1) * (width + 200), { duration: flyMs }, (finished) => {
+        "worklet";
+        if (finished) scheduleOnRN(onNext, action);
+      }),
+    );
+  };
 
   const d = details.data;
   const trailer = pickTrailer(d?.videos);
   const { watch, rent } = availability(d);
   const lite = toLite(movie);
   const posterW = pickPosterWidth(width);
-  // free space beside the poster inside the card (card margin 16 + padding 16 on each side)
-  const gutter = Math.max(0, (width - 64 - posterW) / 2);
+  const posterH = Math.round(posterW * 1.5);
+  const open = () => {
+    signal("open", lite);
+    openTitle(movie.id, movie.poster_path);
+  };
 
   return (
     <Animated.View
-      key={movie.id}
       style={[styles.card, liquid ? surface("card") : { backgroundColor: c.card, borderColor: alpha(c.tint, 0.05) }, enter]}
     >
-      {/* the card's backdrop is its own blur target: the Next button beside the poster blurs it */}
-      <BlurTargetView ref={backdrop} style={StyleSheet.absoluteFill}>
+      <View style={StyleSheet.absoluteFill}>
         <Image
           source={backdropUri(movie.backdrop_path)}
           blurRadius={18}
@@ -123,126 +151,126 @@ export function TonightPick({
           locations={[0, 0.45, 0.92]}
           style={StyleSheet.absoluteFill}
         />
-      </BlurTargetView>
+      </View>
 
-      <View style={{ padding: 16, gap: 18 }}>
-        <SwipePoster
-          key={movie.id}
-          title={movie.title}
-          path={movie.poster_path}
-          id={movie.id}
-          width={posterW}
-          gutter={gutter}
-          glassTarget={backdrop}
-          glow={alpha(accent, 0.75)}
-          onOpen={() => {
-            signal("open", lite);
-            openTitle(movie.id, movie.poster_path);
-          }}
-          onNext={onNext}
-        />
-
-        <View style={{ gap: 14 }}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <View style={[styles.badge, { backgroundColor: alpha(accent, 0.22) }]}>
-              <Sparkles size={14} color={mix(accent, c.ink, 0.6)} />
-              <Txt variant="eyebrow" style={{ color: mix(accent, c.ink, 0.6), letterSpacing: 1.4 }}>
+      <View style={{ padding: PAD, gap: GAP }}>
+        <View style={[styles.top, { minHeight: posterH }]}>
+          <SwipePoster
+            title={movie.title}
+            path={movie.poster_path}
+            id={movie.id}
+            width={posterW}
+            glow={alpha(accent, 0.7)}
+            x={x}
+            gone={gone}
+            onFly={fly}
+            onOpen={open}
+          />
+          <Tap scaleTo={0.98} onPress={open} accessibilityLabel={`Open ${movie.title}`} style={styles.info}>
+            <View style={styles.inline}>
+              <Sparkles size={12} color={mix(accent, c.ink, 0.6)} />
+              <Txt variant="eyebrow" style={{ color: mix(accent, c.ink, 0.6), letterSpacing: 1.2 }}>
                 Tonight&apos;s pick
               </Txt>
             </View>
-            {d?.runtime ? (
-              <View style={[styles.badge, surface("chip")]}>
-                <Moon size={14} color={c.time} />
-                <Txt variant="caption" style={{ fontWeight: "600" }}>
-                  Ends {formatClock(addMinutes(now, d.runtime))}
-                </Txt>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={{ gap: 6 }}>
-            <Txt variant="title" style={{ fontSize: 30, lineHeight: 34 }}>
+            <Txt variant="title" numberOfLines={2} style={{ fontSize: 21, lineHeight: 25, marginTop: 4 }}>
               {movie.title}
             </Txt>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Wand2 size={14} color={alpha(c.ink, 0.85)} />
-              <Txt variant="label" style={{ fontSize: 13, color: alpha(c.ink, 0.85), flexShrink: 1 }}>
-                {rec.reason}
-              </Txt>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={[styles.inline, { marginTop: 4 }]}>
               <Txt variant="small" muted>
                 {yearOf(movie.release_date)}
               </Txt>
-              {d?.runtime ? <Dot /> : null}
-              {d?.runtime ? (
-                <Txt variant="small" muted>
-                  {formatDuration(d.runtime)}
-                </Txt>
-              ) : null}
               <Dot />
-              <Star size={14} color={c.feel} fill={c.feel} />
+              <Star size={12} color={c.feel} fill={c.feel} />
               <Txt variant="small" muted>
                 {movie.vote_average.toFixed(1)}
               </Txt>
+              {d?.runtime ? <Dot /> : null}
+              {d?.runtime ? (
+                <Txt variant="small" muted numberOfLines={1}>
+                  {formatDuration(d.runtime)}
+                </Txt>
+              ) : null}
             </View>
-          </View>
+            {/* always one line tall, so the runtime arriving a moment later doesn't move anything */}
+            <View style={[styles.inline, { marginTop: 2, height: 18 }]}>
+              {d?.runtime ? (
+                <>
+                  <Moon size={12} color={c.time} />
+                  <Txt variant="small" style={{ color: c.time, fontWeight: "600" }}>
+                    Ends {formatClock(addMinutes(now, d.runtime))}
+                  </Txt>
+                </>
+              ) : null}
+            </View>
+            <View style={[styles.inline, { marginTop: 6, alignItems: "flex-start" }]}>
+              <Wand2 size={12} color={alpha(c.ink, 0.85)} style={{ marginTop: 3 }} />
+              <Txt
+                variant="small"
+                numberOfLines={posterH >= 190 ? 2 : 1}
+                style={{ flexShrink: 1, fontWeight: "600", color: alpha(c.ink, 0.85) }}
+              >
+                {rec.reason}
+              </Txt>
+            </View>
+            <View style={{ marginTop: 6 }}>
+              <AppsChip loading={details.isLoading} watch={watch} rentCount={rent.length} />
+            </View>
+          </Tap>
+        </View>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-            {movie.genre_ids.slice(0, 3).map((g) => (
-              <Chip key={g} label={GENRES[g] ?? "Other"} />
-            ))}
-          </View>
-
-          <Txt variant="small" numberOfLines={3} style={{ color: alpha(c.ink, 0.75), lineHeight: 20 }}>
+        <Tap onPress={open} accessibilityLabel={`About ${movie.title}`} style={{ minHeight: OVERVIEW }}>
+          <Txt variant="small" numberOfLines={2} style={{ color: alpha(c.ink, 0.75) }}>
             {movie.overview}
           </Txt>
+        </Tap>
 
-          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-            <MatchRing value={rec.match} />
-            <Tap
-              disabled={!trailer}
-              onPress={() => {
-                if (!trailer) return;
-                signal("trailer", lite); // interest signal for the recommender
-                openTrailer(trailer.key);
-              }}
-              style={[styles.trailer, { backgroundColor: accent, boxShadow: `0 10px 28px -10px ${accent}` }]}
-            >
-              <Play size={16} color={c.night} fill={c.night} />
-              <Txt variant="label" style={{ color: c.night, fontWeight: "700" }}>
-                Trailer
-              </Txt>
-            </Tap>
-            <AppsPill loading={details.isLoading} watch={watch} rentCount={rent.length} />
-            <Tap
-              scaleTo={0.88}
-              accessibilityLabel="Pick something else"
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onNext("skip"); // nudges this title down for a few days → the next best fit moves up
-              }}
-              style={[styles.round, surface("control")]}
-            >
-              <Shuffle size={16} color={c.ink} />
-            </Tap>
+        <View style={styles.inlineRow}>
+          <Tap
+            disabled={!trailer}
+            onPress={() => {
+              if (!trailer) return;
+              signal("trailer", lite); // interest signal for the recommender
+              openTrailer(trailer.key);
+            }}
+            style={[styles.wide, { backgroundColor: accent, boxShadow: `0 10px 24px -12px ${accent}` }]}
+          >
+            <Play size={16} color={c.night} fill={c.night} />
+            <Txt variant="label" style={{ color: c.night, fontWeight: "700" }}>
+              Trailer
+            </Txt>
+          </Tap>
+          <Tap
+            accessibilityLabel="Next pick"
+            onPress={() => fly("skip")} // nudges this title down for a few days → the next best fit moves up
+            style={[styles.wide, surface("control")]}
+          >
+            <Txt variant="label">Next</Txt>
+            <ChevronRight size={18} color={c.ink} strokeWidth={2.4} />
+          </Tap>
+        </View>
+
+        <View style={styles.inlineRow}>
+          <MatchRing value={rec.match} size={ROW} />
+          <View style={{ flex: 1 }}>
+            <FeedbackButtons movie={lite} compact />
           </View>
-          <FeedbackButtons movie={lite} />
         </View>
       </View>
     </Animated.View>
   );
 }
 
-function AppsPill({ loading, watch, rentCount }: { loading: boolean; watch: Provider[]; rentCount: number }) {
+/** Where to watch, as one small chip: provider logos, or rent / not streaming. */
+function AppsChip({ loading, watch, rentCount }: { loading: boolean; watch: Provider[]; rentCount: number }) {
   const { c } = useTheme();
   const surface = useSurface();
-  if (loading) return <Skeleton style={{ height: 44, width: 128, borderRadius: 999 }} />;
+  if (loading) return <Skeleton style={{ height: 30, width: 104, borderRadius: 999 }} />;
   const label = watch.length
-    ? `On ${watch.length} app${watch.length > 1 ? "s" : ""}`
+    ? `${watch.length} app${watch.length > 1 ? "s" : ""}`
     : rentCount
       ? `Rent on ${rentCount}`
-      : "Not streaming in India";
+      : "Not streaming";
   const Icon = rentCount ? Clapperboard : Tv;
   return (
     <View style={[styles.apps, surface("control")]}>
@@ -253,42 +281,54 @@ function AppsPill({ loading, watch, rentCount }: { loading: boolean; watch: Prov
               key={p.provider_id}
               source={logoUri(p.logo_path)}
               accessibilityLabel={p.provider_name}
-              style={{ width: 32, height: 32, borderRadius: 16, marginLeft: i ? -8 : 0, borderWidth: 2, borderColor: c.card }}
+              style={{ width: 22, height: 22, borderRadius: 11, marginLeft: i ? -6 : 0, borderWidth: 1.5, borderColor: c.card }}
             />
           ))}
         </View>
       ) : (
-        <View style={[styles.round, { width: 32, height: 32, backgroundColor: alpha(c.tint, 0.1) }]}>
-          <Icon size={16} color={c.ink} />
-        </View>
+        <Icon size={14} color={c.ink} style={{ marginLeft: 6 }} />
       )}
-      <Txt variant="label">{label}</Txt>
+      <Txt variant="small" numberOfLines={1} style={{ flexShrink: 1, fontWeight: "600" }}>
+        {label}
+      </Txt>
     </View>
   );
 }
 
 function Dot() {
   const { c } = useTheme();
-  return <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: alpha(c.muted, 0.6) }} />;
+  return <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: alpha(c.muted, 0.6) }} />;
 }
 
+/** Same rows and sizes as the loaded card, so nothing moves when the pick arrives. */
 function PickSkeleton() {
   const { width } = useWindowDimensions();
   const posterW = pickPosterWidth(width);
+  const posterH = Math.round(posterW * 1.5);
   return (
-    <Card style={{ padding: 16, gap: 14, marginHorizontal: 16, borderRadius: 32 }}>
-      <Skeleton style={{ width: posterW, aspectRatio: 2 / 3, borderRadius: 24, alignSelf: "center" }} />
-      <Skeleton style={{ height: 24, width: 150, borderRadius: 999 }} />
-      <Skeleton style={{ height: 36, width: "75%" }} />
-      <Skeleton style={{ height: 16, width: "50%" }} />
-      <Skeleton style={{ height: 60, width: "100%" }} />
+    <Card style={{ padding: PAD, gap: GAP, marginHorizontal: 16, borderRadius: 28 }}>
+      <View style={[styles.top, { minHeight: posterH }]}>
+        <Skeleton style={{ width: posterW, height: posterH, borderRadius: 18 }} />
+        <View style={[styles.info, { gap: 10 }]}>
+          <Skeleton style={{ height: 12, width: 110, borderRadius: 999 }} />
+          <Skeleton style={{ height: 22, width: "90%" }} />
+          <Skeleton style={{ height: 14, width: "60%" }} />
+          <Skeleton style={{ height: 14, width: "75%" }} />
+        </View>
+      </View>
+      <Skeleton style={{ height: OVERVIEW, width: "100%" }} />
+      <View style={styles.inlineRow}>
+        <Skeleton style={{ height: ROW, flex: 1, borderRadius: 999 }} />
+        <Skeleton style={{ height: ROW, flex: 1, borderRadius: 999 }} />
+      </View>
+      <Skeleton style={{ height: ROW, width: "100%", borderRadius: 16 }} />
     </Card>
   );
 }
 
 function EmptyPick() {
   return (
-    <Card style={{ padding: 28, alignItems: "center", gap: 8, marginHorizontal: 16, borderRadius: 32 }}>
+    <Card style={{ padding: 28, alignItems: "center", gap: 8, marginHorizontal: 16, borderRadius: 28 }}>
       <Txt variant="heading" style={{ fontSize: 22 }}>
         Nothing fits just yet
       </Txt>
@@ -302,89 +342,60 @@ function EmptyPick() {
 const styles = StyleSheet.create({
   stamp: {
     position: "absolute",
-    top: 12,
+    top: 8,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    borderWidth: 3,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    gap: 3,
+    borderWidth: 2,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
   },
-  stampLeft: { left: 12 },
-  stampRight: { right: 12 },
-  stampText: { color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: 1 },
-  nextBtn: { position: "absolute" },
-  nextGlass: { alignItems: "center", justifyContent: "center" },
-  card: { marginHorizontal: 16, borderRadius: 32, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
-  badge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
-  trailer: { height: 48, borderRadius: 999, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", gap: 8 },
-  apps: { height: 44, borderRadius: 999, paddingLeft: 6, paddingRight: 16, flexDirection: "row", alignItems: "center", gap: 8 },
-  round: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  stampLeft: { left: 8 },
+  stampRight: { right: 8 },
+  stampText: { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 0.8 },
+  card: { marginHorizontal: 16, borderRadius: 28, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
+  top: { flexDirection: "row", gap: 14 },
+  info: { flex: 1, minWidth: 0 },
+  inline: { flexDirection: "row", alignItems: "center", gap: 6 },
+  inlineRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  wide: { flex: 1, height: ROW, borderRadius: 999, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  apps: { alignSelf: "flex-start", maxWidth: "100%", height: 30, borderRadius: 999, paddingLeft: 4, paddingRight: 12, flexDirection: "row", alignItems: "center", gap: 6 },
 });
 
 /**
  * The pick's poster, swipeable: left = next pick, right = save + next, tap = open. Only a
  * horizontal drag activates (activeOffsetX), and a vertical one fails it (failOffsetY), so
- * the page still scrolls. A round Next button beside the poster (in the card's right gutter,
- * never on the artwork) does the same without a swipe.
+ * the page still scrolls. The Next button below does the same without a swipe.
  *
  * UI-thread callbacks only touch shared values and hand the rest to JS via scheduleOnRN:
  * calling plain JS functions from a worklet is what crashed the slider.
- *
- * The Next button's glass blurs the card backdrop through `glassTarget`, a BlurTargetView that is
- * a sibling of this whole poster block, never an ancestor: a BlurView inside the target it blurs
- * loops Android's RenderNode graph and crashes the app on open (0.1.1/0.1.2).
  */
 function SwipePoster({
   title,
   path,
   id,
   width,
-  gutter,
-  glassTarget,
   glow,
+  x,
+  gone,
+  onFly,
   onOpen,
-  onNext,
 }: {
   title: string;
   path: string | null;
   id: number;
   width: number;
-  /** free width beside the poster, where the Next button goes */
-  gutter: number;
-  glassTarget: RefObject<ComponentRef<typeof View> | null>;
   glow: string;
+  x: SharedValue<number>;
+  gone: SharedValue<boolean>;
+  onFly: (action: NextAction) => void;
   onOpen: () => void;
-  onNext: (action: NextAction) => void;
 }) {
-  const ink = useGlassInk();
   const { c } = useTheme();
   const motion = useMotion();
-  const { width: screenW } = useWindowDimensions();
-  const x = useSharedValue(0);
-  const gone = useSharedValue(false);
-  // round button centred in the gutter, as big as fits (48 on most phones, 40 on 360-wide ones)
-  const btn = Math.round(Math.min(48, Math.max(36, gutter - 8)));
-  const [flying, setFlying] = useState(false);
   const back = motion.spring({ stiffness: 420, damping: 32 });
-  const flyMs = motion.duration(240);
-
-  const fly = (action: NextAction) => {
-    if (gone.get()) return;
-    gone.set(true);
-    setFlying(true);
-    Haptics.impactAsync(action === "save" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
-    const to = (action === "save" ? 1 : -1) * (screenW + 200);
-    if (!flyMs) return onNext(action);
-    x.set(
-      withTiming(to, { duration: flyMs }, (finished) => {
-        "worklet";
-        if (finished) scheduleOnRN(onNext, action);
-      }),
-    );
-  };
 
   const pan = usePanGesture({
     activeOffsetX: [-12, 12],
@@ -396,8 +407,8 @@ function SwipePoster({
     onDeactivate: (e) => {
       "worklet";
       if (gone.get()) return;
-      if (e.translationX < -90 || e.velocityX < -600) scheduleOnRN(fly, "skip");
-      else if (e.translationX > 90 || e.velocityX > 600) scheduleOnRN(fly, "save");
+      if (e.translationX < -70 || e.velocityX < -600) scheduleOnRN(onFly, "skip");
+      else if (e.translationX > 70 || e.velocityX > 600) scheduleOnRN(onFly, "save");
       else x.set(back ? withSpring(0, back) : 0);
     },
   });
@@ -405,52 +416,32 @@ function SwipePoster({
   const card = useAnimatedStyle(() => ({
     transform: [{ translateX: x.get() }, { rotate: `${(x.get() / 260) * 9}deg` }],
   }));
-  const nextStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [-110, -20], [1, 0], Extrapolation.CLAMP) }));
-  const saveStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [20, 110], [0, 1], Extrapolation.CLAMP) }));
-  // the button stays put while the poster moves, so it steps aside during a drag
-  const nextFade = useAnimatedStyle(() => ({ opacity: interpolate(Math.abs(x.get()), [0, 50], [1, 0], Extrapolation.CLAMP) }));
+  const nextStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [-90, -16], [1, 0], Extrapolation.CLAMP) }));
+  const saveStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [16, 90], [0, 1], Extrapolation.CLAMP) }));
 
   return (
-    <View>
-      <GestureDetector gesture={pan}>
-        <Animated.View style={[{ alignSelf: "center", width }, card]}>
-          <Tap
-            scaleTo={0.97}
-            accessibilityLabel={`Open ${title}. Swipe left for the next pick, right to save it.`}
-            onPress={onOpen}
-            style={{ borderRadius: 24, boxShadow: `0 30px 60px -22px ${glow}` }}
-          >
-            <Poster path={path} width={width} radius={24} id={id} />
-          </Tap>
-          <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, { borderColor: c.ink }, nextStamp]}>
-            <Txt variant="label" style={styles.stampText}>
-              NEXT
-            </Txt>
-          </Animated.View>
-          <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampRight, { borderColor: c.match }, saveStamp]}>
-            <Bookmark size={14} color={c.match} fill={c.match} />
-            <Txt variant="label" style={[styles.stampText, { color: c.match }]}>
-              SAVE
-            </Txt>
-          </Animated.View>
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[{ width, zIndex: 1 }, card]}>
+        <Tap
+          scaleTo={0.97}
+          accessibilityLabel={`Open ${title}. Swipe left for the next pick, right to save it.`}
+          onPress={onOpen}
+          style={{ borderRadius: 18, boxShadow: `0 18px 36px -16px ${glow}` }}
+        >
+          <Poster path={path} width={width} radius={18} id={id} />
+        </Tap>
+        <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, { borderColor: c.ink }, nextStamp]}>
+          <Txt variant="label" style={styles.stampText}>
+            NEXT
+          </Txt>
         </Animated.View>
-      </GestureDetector>
-      {!flying && gutter >= 40 && (
-        <Animated.View style={[styles.nextBtn, { right: (gutter - btn) / 2, top: (width * 1.5 - btn) / 2 }, nextFade]}>
-          <Tap scaleTo={0.88} accessibilityLabel="Next pick" hitSlop={8} onPress={() => fly("skip")}>
-            <BlurTargetContext value={glassTarget}>
-              <Glass radius={btn / 2} interactive style={[styles.nextGlass, { width: btn, height: btn }]}>
-                <View style={ink.halo}>
-                  <ChevronRight size={Math.round(btn * 0.5)} color={ink.ink} strokeWidth={2.4} />
-                </View>
-              </Glass>
-            </BlurTargetContext>
-          </Tap>
+        <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampRight, { borderColor: c.match }, saveStamp]}>
+          <Bookmark size={12} color={c.match} fill={c.match} />
+          <Txt variant="label" style={[styles.stampText, { color: c.match }]}>
+            SAVE
+          </Txt>
         </Animated.View>
-      )}
-      <Txt variant="caption" muted style={{ textAlign: "center", marginTop: 10 }}>
-        ← next pick · save →
-      </Txt>
-    </View>
+      </Animated.View>
+    </GestureDetector>
   );
 }

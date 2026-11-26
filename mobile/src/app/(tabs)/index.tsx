@@ -49,7 +49,7 @@ export default function TonightScreen() {
 
   return (
     <Screen title="What's the vibe?" eyebrow={dayPart(now)} ambient={{ path: pick?.movie.backdrop_path, fallback: false }}>
-      <View style={{ gap: 20, paddingTop: 4 }}>
+      <View style={{ gap: 12, paddingTop: 4 }}>
         <MoodChips />
         <TimeSlider />
         {results.isError ? (

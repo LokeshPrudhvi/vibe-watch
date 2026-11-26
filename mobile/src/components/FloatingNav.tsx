@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Keyboard, StyleSheet, TextInput, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import Compass from "lucide-react-native/icons/compass";
 import LibraryBig from "lucide-react-native/icons/library-big";
 import MoonStar from "lucide-react-native/icons/moon-star";
@@ -68,15 +68,15 @@ export function FloatingNav() {
         <Animated.View layout={layout} style={searching ? styles.round : styles.grow}>
           <Glass radius={BAR / 2} style={styles.fill} interactive>
             {searching ? (
-              <Animated.View key="close" entering={motion.off ? undefined : FadeIn.duration(180)} style={styles.fill}>
+              <NavFade key="close">
                 <Tap onPress={closeSearch} accessibilityLabel="Close search" style={styles.center}>
                   <NavIcon Icon={X} />
                 </Tap>
-              </Animated.View>
+              </NavFade>
             ) : (
-              <Animated.View key="tabs" entering={motion.off ? undefined : FadeIn.duration(180)} style={styles.fill}>
+              <NavFade key="tabs">
                 <TabsPill active={active} />
-              </Animated.View>
+              </NavFade>
             )}
           </Glass>
         </Animated.View>
@@ -84,21 +84,37 @@ export function FloatingNav() {
         <Animated.View layout={layout} style={searching ? styles.grow : styles.round}>
           <Glass radius={BAR / 2} style={styles.fill} interactive>
             {searching ? (
-              <Animated.View key="field" entering={motion.off ? undefined : FadeIn.duration(180)} style={styles.fill}>
+              <NavFade key="field">
                 <SearchField />
-              </Animated.View>
+              </NavFade>
             ) : (
-              <Animated.View key="search" entering={motion.off ? undefined : FadeIn.duration(180)} style={styles.fill}>
+              <NavFade key="search">
                 <Tap onPress={() => router.navigate("/search")} accessibilityLabel="Search" style={styles.center}>
                   <NavIcon Icon={Search} />
                 </Tap>
-              </Animated.View>
+              </NavFade>
             )}
           </Glass>
         </Animated.View>
       </View>
     </Animated.View>
   );
+}
+
+/**
+ * Fades the swapped-in navbar content in on mount. A plain shared value, not a Reanimated
+ * `entering` animation: on Android New Arch those sometimes never start when the view mounts
+ * mid-layout and the icons stay at opacity 0. This always lands on 1.
+ */
+function NavFade({ children }: { children: ReactNode }) {
+  const motion = useMotion();
+  const ms = motion.duration(180);
+  const shown = useSharedValue(ms ? 0 : 1);
+  useEffect(() => {
+    shown.set(ms ? withTiming(1, { duration: ms }) : 1);
+  }, [ms, shown]);
+  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  return <Animated.View style={[styles.fill, fade]}>{children}</Animated.View>;
 }
 
 function NavIcon({ Icon }: { Icon: typeof Search }) {

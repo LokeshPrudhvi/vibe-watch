@@ -1,34 +1,47 @@
 import { useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import Bookmark from "lucide-react-native/icons/bookmark";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Eye from "lucide-react-native/icons/eye";
 import Heart from "lucide-react-native/icons/heart";
 import ThumbsDown from "lucide-react-native/icons/thumbs-down";
-import X from "lucide-react-native/icons/x";
+import Trash2 from "lucide-react-native/icons/trash-2";
 import type { Mark, MarkType } from "@shared/recommend";
 import { Segmented } from "@/components/Controls";
 import { useNavSpace } from "@/components/FloatingNav";
-import { useSurface } from "@/components/Glass";
 import { GlassPage } from "@/components/GlassPage";
 import { LargeTitle, TopBar, useHeaderScroll, useHeaderSpace } from "@/components/Header";
 import { Poster, PosterGrid, openTitle } from "@/components/Posters";
+import { Sheet } from "@/components/Sheet";
 import { Empty, Tap, Txt } from "@/components/ui";
+import { persistStorage } from "@/lib/storage";
+import { useToast } from "@/store/ui";
 import { useVibeStore } from "@/store/vibe";
+import { alpha } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
-const SHELVES: { type: MarkType; label: string; Icon: typeof Heart; empty: string; remove: string }[] = [
-  { type: "save", label: "Saved", Icon: Bookmark, empty: "Tap Save on any pick to watch it later.", remove: "Remove from Saved" },
-  { type: "like", label: "Loved", Icon: Heart, empty: "Movies you love teach your recommendations the most.", remove: "Unlove" },
-  { type: "seen", label: "Seen", Icon: Eye, empty: "Mark what you've watched and we'll stop suggesting it.", remove: "Remove from Seen" },
-  { type: "dislike", label: "Hidden", Icon: ThumbsDown, empty: "Titles you said aren't for you show up here.", remove: "Unhide" },
+const SHELVES: { type: MarkType; label: string; Icon: typeof Heart; empty: string; remove: string; removed: string }[] = [
+  { type: "save", label: "Saved", Icon: Bookmark, empty: "Tap Save on any pick to watch it later.", remove: "Remove from Saved", removed: "Removed from Saved" },
+  { type: "like", label: "Loved", Icon: Heart, empty: "Movies you love teach your recommendations the most.", remove: "Unlove", removed: "Removed from Loved" },
+  { type: "seen", label: "Seen", Icon: Eye, empty: "Mark what you've watched and we'll stop suggesting it.", remove: "Remove from Seen", removed: "Removed from Seen" },
+  { type: "dislike", label: "Hidden", Icon: ThumbsDown, empty: "Titles you said aren't for you show up here.", remove: "Unhide", removed: "Unhidden" },
 ];
+
+/** "Long-press a poster for options" shows until the first long-press, then never again. */
+const useLibraryHint = create<{ learned: boolean; learn: () => void }>()(
+  persist((set) => ({ learned: false, learn: () => set({ learned: true }) }), { name: "vibe-library-hint", storage: persistStorage }),
+);
 
 export default function LibraryScreen() {
   const { c } = useTheme();
-  const surface = useSurface();
   const [shelf, setShelf] = useState<MarkType>("save");
+  const [menu, setMenu] = useState<Mark | null>(null);
   const marks = useVibeStore((s) => s.marks);
-  const unmark = useVibeStore((s) => s.unmark);
+  const learned = useLibraryHint((s) => s.learned);
+  const learn = useLibraryHint((s) => s.learn);
   const header = useHeaderScroll();
   const top = useHeaderSpace();
   const navSpace = useNavSpace();
@@ -46,13 +59,17 @@ export default function LibraryScreen() {
           options={SHELVES.map((s) => ({ value: s.type, label: s.label }))}
         />
       </View>
-      {items.length === 0 && (
+      {items.length === 0 ? (
         <View style={{ paddingHorizontal: 16 }}>
           <Empty text={current.empty}>
             <current.Icon size={32} color={c.muted} />
           </Empty>
         </View>
-      )}
+      ) : !learned ? (
+        <Txt variant="caption" muted style={{ paddingHorizontal: 16, marginTop: -4, fontSize: 12, lineHeight: 16 }}>
+          Long-press a poster to remove it or mark it seen.
+        </Txt>
+      ) : null}
     </View>
   );
 
@@ -68,28 +85,89 @@ export default function LibraryScreen() {
         onScroll={header.onScroll}
         paddingTop={top}
         paddingBottom={navSpace}
-        renderCell={({ movie }, cell) => (
-          <View style={{ width: cell }}>
-            <Tap scaleTo={0.96} accessibilityLabel={movie.title} onPress={() => openTitle(movie.id, movie.poster)}>
-              <Poster path={movie.poster} width={cell} id={movie.id} />
-              <Txt variant="label" numberOfLines={1} style={{ marginTop: 6, fontSize: 12 }}>
-                {movie.title}
-              </Txt>
-            </Tap>
-            <Tap
-              onPress={() => unmark(shelf, movie.id)}
-              accessibilityLabel={`${current.remove}: ${movie.title}`}
-              hitSlop={6}
-              style={[
-                { position: "absolute", top: 6, right: 6, width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-                surface("overlay"),
-              ]}
-            >
-              <X size={15} color={c.ink} />
-            </Tap>
-          </View>
+        renderCell={(m, cell) => (
+          <Tap
+            scaleTo={0.96}
+            accessibilityLabel={m.movie.title}
+            accessibilityHint="Long-press for options"
+            accessibilityActions={[{ name: "longpress", label: "Options" }]}
+            onAccessibilityAction={(e) => e.nativeEvent.actionName === "longpress" && setMenu(m)}
+            onPress={() => openTitle(m.movie.id, m.movie.poster)}
+            delayLongPress={350}
+            onLongPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              learn();
+              setMenu(m);
+            }}
+            style={{ width: cell }}
+          >
+            <Poster path={m.movie.poster} width={cell} id={m.movie.id} />
+            <Txt variant="label" numberOfLines={1} style={{ marginTop: 6, fontSize: 12 }}>
+              {m.movie.title}
+            </Txt>
+          </Tap>
         )}
       />
+      <Sheet open={!!menu} onClose={() => setMenu(null)} title={menu?.movie.title}>
+        {menu && <MarkMenu mark={menu} shelf={current} onDone={() => setMenu(null)} />}
+      </Sheet>
     </GlassPage>
   );
 }
+
+/** What a long-press offers: open, mark seen (Saved only) and remove, each with an Undo toast. */
+function MarkMenu({ mark, shelf, onDone }: { mark: Mark; shelf: (typeof SHELVES)[number]; onDone: () => void }) {
+  const { c } = useTheme();
+  const markAs = useVibeStore((s) => s.mark);
+  const unmark = useVibeStore((s) => s.unmark);
+  const show = useToast((s) => s.show);
+  const { movie } = mark;
+
+  // snapshot first, so Undo restores exactly what was there (e.g. the Save that Seen replaced)
+  const change = (apply: () => void, text: string) => {
+    const before = useVibeStore.getState().marks;
+    apply();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    show(text, () => useVibeStore.setState({ marks: before }));
+    onDone();
+  };
+
+  return (
+    <View style={{ gap: 4 }}>
+      <MenuRow
+        label="Open details"
+        Icon={ChevronRight}
+        onPress={() => {
+          onDone();
+          openTitle(movie.id, movie.poster);
+        }}
+      />
+      {shelf.type === "save" && (
+        <MenuRow label="Mark as seen" Icon={Eye} onPress={() => change(() => markAs("seen", movie), `Marked ${movie.title} as seen`)} />
+      )}
+      <MenuRow
+        label={shelf.remove}
+        Icon={Trash2}
+        color={c.edge}
+        onPress={() => change(() => unmark(shelf.type, movie.id), `${shelf.removed}: ${movie.title}`)}
+      />
+    </View>
+  );
+}
+
+function MenuRow({ label, Icon, color, onPress }: { label: string; Icon: typeof Heart; color?: string; onPress: () => void }) {
+  const { c } = useTheme();
+  const ink = color ?? c.ink;
+  return (
+    <Tap scaleTo={0.98} onPress={onPress} accessibilityLabel={label} style={[styles.row, { backgroundColor: alpha(c.tint, 0.06) }]}>
+      <Icon size={20} color={ink} />
+      <Txt variant="label" style={{ fontSize: 16, color: ink }}>
+        {label}
+      </Txt>
+    </Tap>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { height: 54, borderRadius: 16, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 14 },
+});
