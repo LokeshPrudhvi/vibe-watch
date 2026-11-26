@@ -32,6 +32,8 @@ import {
   type Provider,
 } from "@shared/tmdb";
 import { ErrorCard, FeedbackButtons, MatchRing } from "@/components/Feedback";
+import { useSurface } from "@/components/Glass";
+import { GlassPage } from "@/components/GlassPage";
 import { TopBar, useHeaderScroll } from "@/components/Header";
 import { Poster, PosterRow } from "@/components/Posters";
 import { Card, Chip, Empty, SectionTitle, Skeleton, Tap, Txt } from "@/components/ui";
@@ -82,7 +84,10 @@ export default function TitleScreen() {
   const trailer = pickTrailer(data?.videos);
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.base }}>
+    <GlassPage
+      ambient={{ off: true }}
+      bar={<TopBar title={data?.title ?? ""} scrolled={header.scrolled} collapsed={header.collapsed} back settings={false} />}
+    >
       <ScrollView
         onScroll={header.onScroll}
         scrollEventThrottle={32}
@@ -153,8 +158,7 @@ export default function TitleScreen() {
           )}
         </View>
       </ScrollView>
-      <TopBar title={data?.title ?? ""} scrolled={header.scrolled} collapsed={header.collapsed} back settings={false} />
-    </View>
+    </GlassPage>
   );
 }
 
@@ -318,6 +322,7 @@ function ScoreTiles({ data, released }: { data: MovieDetails; released: boolean 
 
 function ProviderList({ title, Icon, list }: { title: string; Icon: typeof Tv; list: Provider[] }) {
   const { c } = useTheme();
+  const surface = useSurface();
   if (!list.length) return null;
   return (
     <View style={{ gap: 8 }}>
@@ -331,7 +336,7 @@ function ProviderList({ title, Icon, list }: { title: string; Icon: typeof Tv; l
         {list.map((p) => (
           <View
             key={p.provider_id}
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, backgroundColor: alpha(c.tint, 0.06), padding: 4, paddingRight: 14 }}
+            style={[{ flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, padding: 4, paddingRight: 14 }, surface("chip")]}
           >
             <Image source={logoUri(p.logo_path)} style={{ width: 32, height: 32, borderRadius: 16 }} />
             <Txt variant="label">{p.provider_name}</Txt>
@@ -380,6 +385,7 @@ function WhereToWatch({ data, released }: { data: MovieDetails; released: boolea
 /** Keywords often give the plot away ("twist ending", "death of …"), so they start hidden. */
 function Themes({ data }: { data: MovieDetails }) {
   const { c } = useTheme();
+  const surface = useSurface();
   const [revealed, setRevealed] = useState(false);
   const words = data.keywords?.keywords.slice(0, 14) ?? [];
   if (!words.length) return null;
@@ -388,7 +394,7 @@ function Themes({ data }: { data: MovieDetails }) {
       <View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }} accessibilityElementsHidden={!revealed}>
           {words.map((k) => (
-            <View key={k.id} style={{ borderRadius: 999, backgroundColor: alpha(c.tint, 0.08), paddingHorizontal: 12, paddingVertical: 5 }}>
+            <View key={k.id} style={[{ borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }, surface("chip")]}>
               {revealed ? (
                 <Txt variant="caption" style={{ fontSize: 12, fontWeight: "500", textTransform: "capitalize" }}>
                   {k.name}

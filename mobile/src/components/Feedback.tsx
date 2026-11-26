@@ -12,6 +12,7 @@ import ThumbsDown from "lucide-react-native/icons/thumbs-down";
 import Undo2 from "lucide-react-native/icons/undo-2";
 import type { MarkType, MovieLite } from "@shared/recommend";
 import { ApiError, isReleased, isRetryable } from "@shared/tmdb";
+import { useSurface } from "@/components/Glass";
 import { Card, Tap, Txt } from "@/components/ui";
 import { API_BASE } from "@/lib/api";
 import { useMotion } from "@/lib/motion";
@@ -43,6 +44,7 @@ function describe(error: unknown) {
 
 export function ErrorCard({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const { c } = useTheme();
+  const surface = useSurface();
   const { title, body } = describe(error);
   const canRetry = !!onRetry && (isRetryable(error) || (error instanceof ApiError && error.code.includes("RATE_LIMITED")));
   return (
@@ -59,7 +61,7 @@ export function ErrorCard({ error, onRetry }: { error: unknown; onRetry?: () => 
         </Txt>
       )}
       {canRetry && (
-        <Tap onPress={onRetry} style={[styles.pillButton, { backgroundColor: alpha(c.tint, 0.1), alignSelf: "flex-start", marginTop: 6 }]}>
+        <Tap onPress={onRetry} style={[styles.pillButton, surface("control"), { alignSelf: "flex-start", marginTop: 6 }]}>
           <Txt variant="label">Try again</Txt>
         </Tap>
       )}
@@ -225,6 +227,7 @@ function FeedbackButton({
   onToggle: (active: boolean) => void;
 }) {
   const { c } = useTheme();
+  const surface = useSurface();
   const active = useMarked(action.type, id);
   const { Icon } = action;
   const fg = active ? c.inverse : c.ink;
@@ -234,7 +237,7 @@ function FeedbackButton({
       onPress={() => onToggle(active)}
       accessibilityLabel={action.label}
       accessibilityState={{ selected: active }}
-      style={[styles.pillButton, { backgroundColor: active ? c.ink : alpha(c.tint, 0.08) }]}
+      style={[styles.pillButton, active ? { backgroundColor: c.ink } : surface("control")]}
     >
       <Icon size={16} color={fg} fill={active && action.type === "like" ? fg : "none"} />
       <Txt variant="label" style={{ fontSize: 13, color: fg }}>

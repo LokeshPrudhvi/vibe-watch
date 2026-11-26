@@ -4,13 +4,14 @@ import { SEARCH_LANGUAGES, languageFromQuery, languageLabel } from "@shared/lang
 import type { MovieSummary } from "@shared/tmdb";
 import { ErrorCard } from "@/components/Feedback";
 import { useNavSpace } from "@/components/FloatingNav";
+import { useSurface } from "@/components/Glass";
+import { GlassPage } from "@/components/GlassPage";
 import { LargeTitle, TopBar, useHeaderScroll, useHeaderSpace } from "@/components/Header";
 import { GridSkeleton, PosterCard, PosterGrid } from "@/components/Posters";
 import { Empty, SectionTitle, Tap, Txt } from "@/components/ui";
 import { useLanguageBrowse, useSearch as useSearchResults, useTrending } from "@/hooks/tmdb";
 import { useDebounced } from "@/hooks/useUtils";
 import { useSearch } from "@/store/ui";
-import { alpha } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
 type Row = { kind: "title"; key: string; title: string; note?: string } | { kind: "movie"; key: string; movie: MovieSummary; lang: boolean };
@@ -20,7 +21,6 @@ type Row = { kind: "title"; key: string; title: string; note?: string } | { kind
  * A language with no text browses that language. Section titles are grid rows spanning all columns.
  */
 export default function SearchScreen() {
-  const { c } = useTheme();
   const rawQuery = useSearch((s) => s.query);
   const setQuery = useSearch((s) => s.setQuery);
   const lang = useSearch((s) => s.lang);
@@ -112,44 +112,41 @@ export default function SearchScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.base, opacity: search.isPlaceholderData && active ? 0.6 : 1 }}>
-      <PosterGrid<Row>
-        data={status ? [] : rows}
-        keyOf={(r) => r.key}
-        header={head}
-        onScroll={header.onScroll}
-        paddingTop={top}
-        paddingBottom={navSpace}
-        renderCell={(r, cell) =>
-          r.kind === "title" ? (
-            <View style={{ paddingTop: 4 }}>
-              <SectionTitle title={r.title} subtitle={r.note} />
-            </View>
-          ) : (
-            <PosterCard movie={r.movie} width={cell} showLanguage={r.lang} />
-          )
-        }
-        spanOf={(r) => (r.kind === "title" ? "full" : 1)}
-      />
-      <TopBar title={title} scrolled={header.scrolled} collapsed={header.collapsed} />
-    </View>
+    <GlassPage
+      bar={<TopBar title={title} scrolled={header.scrolled} collapsed={header.collapsed} />}
+    >
+      <View style={{ flex: 1, opacity: search.isPlaceholderData && active ? 0.6 : 1 }}>
+        <PosterGrid<Row>
+          data={status ? [] : rows}
+          keyOf={(r) => r.key}
+          header={head}
+          onScroll={header.onScroll}
+          paddingTop={top}
+          paddingBottom={navSpace}
+          renderCell={(r, cell) =>
+            r.kind === "title" ? (
+              <View style={{ paddingTop: 4 }}>
+                <SectionTitle title={r.title} subtitle={r.note} />
+              </View>
+            ) : (
+              <PosterCard movie={r.movie} width={cell} showLanguage={r.lang} />
+            )
+          }
+          spanOf={(r) => (r.kind === "title" ? "full" : 1)}
+        />
+      </View>
+    </GlassPage>
   );
 }
 
 function LangChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   const { c } = useTheme();
+  const surface = useSurface();
   return (
     <Tap
       onPress={onPress}
       accessibilityState={{ selected: on }}
-      style={{
-        borderRadius: 999,
-        paddingHorizontal: 16,
-        paddingVertical: 9,
-        backgroundColor: on ? c.ink : c.card,
-        borderWidth: on ? 0 : 1,
-        borderColor: alpha(c.tint, 0.05),
-      }}
+      style={[{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 }, on ? { backgroundColor: c.ink, borderWidth: 1, borderColor: c.ink } : surface("tile")]}
     >
       <Txt variant="label" style={{ color: on ? c.inverse : c.ink }}>
         {label}

@@ -22,6 +22,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import { useSurface } from "@/components/Glass";
 import { SPRING, useMotion } from "@/lib/motion";
 import { alpha, fonts } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
@@ -101,8 +102,9 @@ export function Tap({
 
 export function Chip({ label, style }: { label: string; style?: StyleProp<ViewStyle> }) {
   const { c } = useTheme();
+  const surface = useSurface();
   return (
-    <View style={[styles.chip, { backgroundColor: alpha(c.tint, 0.07) }, style]}>
+    <View style={[styles.chip, surface("chip"), style]}>
       <Txt variant="small" style={{ fontSize: 12, color: alpha(c.ink, 0.8) }}>
         {label}
       </Txt>
@@ -139,19 +141,10 @@ export function SectionTitle({ title, subtitle }: { title: string; subtitle?: st
   );
 }
 
-/** Rounded card surface used for empty states and settings groups. */
+/** Rounded card surface used for empty states and settings groups: see-through glass in liquid mode. */
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  const { c } = useTheme();
-  return (
-    <View
-      style={[
-        { borderRadius: 28, backgroundColor: c.card, borderWidth: StyleSheet.hairlineWidth, borderColor: alpha(c.tint, 0.06) },
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
+  const surface = useSurface();
+  return <View style={[{ borderRadius: 28 }, surface("card"), style]}>{children}</View>;
 }
 
 export function Empty({ text, children }: { text: string; children?: ReactNode }) {

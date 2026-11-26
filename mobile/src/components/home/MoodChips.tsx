@@ -7,10 +7,10 @@ import Coffee from "lucide-react-native/icons/coffee";
 import Smile from "lucide-react-native/icons/smile";
 import Zap from "lucide-react-native/icons/zap";
 import { MOODS, MOOD_ORDER, type MoodId } from "@shared/moods";
+import { useSurface } from "@/components/Glass";
 import { Tap, Txt } from "@/components/ui";
 import { SPRING, useMotion } from "@/lib/motion";
 import { useVibeStore } from "@/store/vibe";
-import { alpha } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
 const ICONS: Record<MoodId, typeof Brain> = { cozy: Coffee, mind: Brain, feel: Smile, edge: Zap };
@@ -18,6 +18,7 @@ const ICONS: Record<MoodId, typeof Brain> = { cozy: Coffee, mind: Brain, feel: S
 /** Mood picker. The coloured pill slides to the chosen mood on the UI thread. */
 export function MoodChips() {
   const { c } = useTheme();
+  const surface = useSurface();
   const mood = useVibeStore((s) => s.mood);
   const setMood = useVibeStore((s) => s.setMood);
   const motion = useMotion();
@@ -76,9 +77,7 @@ export function MoodChips() {
                 paddingHorizontal: 16,
                 paddingVertical: 11,
                 borderRadius: 999,
-                backgroundColor: on ? "transparent" : c.card,
-                borderWidth: on ? 0 : 1,
-                borderColor: alpha(c.tint, 0.05),
+                ...(on ? { backgroundColor: "transparent", borderWidth: 1, borderColor: "transparent" } : surface("tile")),
               }}
             >
               <Icon size={16} color={on ? c.night : c[id]} />

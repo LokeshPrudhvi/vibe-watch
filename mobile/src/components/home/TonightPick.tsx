@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentRef } from "react";
+import { useEffect, useRef, useState, type ComponentRef, type RefObject } from "react";
 import { Linking, StyleSheet, View, useWindowDimensions } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
@@ -25,7 +25,7 @@ import { availability, pickTrailer, yearOf, type Provider } from "@shared/tmdb";
 import { FeedbackButtons, MatchRing } from "@/components/Feedback";
 import { Poster, openTitle } from "@/components/Posters";
 import { Card, Chip, Skeleton, Tap, Txt } from "@/components/ui";
-import { BlurTargetContext, Glass } from "@/components/Glass";
+import { BlurTargetContext, Glass, useGlassInk, useLiquidSurfaces, useSurface } from "@/components/Glass";
 import { useAccent, useMovie } from "@/hooks/tmdb";
 import { useNow } from "@/hooks/useUtils";
 import { backdropUri, logoUri } from "@/lib/images";
@@ -36,12 +36,20 @@ import { useTheme } from "@/theme/useTheme";
 
 export const openTrailer = (key: string) => Linking.openURL(`https://www.youtube.com/watch?v=${key}`);
 
+export type NextAction = "skip" | "save";
+
+/**
+ * The pick's poster width: 62% of the card, at most 260, and always leaving 44dp on each side
+ * for the Next button, so it never has to sit on the artwork (even on 320dp-wide phones).
+ */
+function pickPosterWidth(width: number) {
+  return Math.min(260, Math.round((width - 32) * 0.62), width - 64 - 88);
+}
+
 /**
  * Tonight's pick, themed by its poster. The ambient backdrop is a tiny w300 image blurred once
  * at decode time, never a live blur, so it costs nothing while scrolling.
  */
-export type NextAction = "skip" | "save";
-
 export function TonightPick({
   rec,
   loading,
@@ -55,9 +63,12 @@ export function TonightPick({
   onNext: (action: NextAction) => void;
 }) {
   const { c, dark } = useTheme();
+  const surface = useSurface();
+  const liquid = useLiquidSurfaces();
   const signal = useVibeStore((s) => s.signal);
   const motion = useMotion();
   const { width } = useWindowDimensions();
+  const backdrop = useRef<ComponentRef<typeof View>>(null);
   const movie = rec?.movie;
   const details = useMovie(movie?.id);
   const accent = useAccent(movie?.poster_path);
@@ -84,30 +95,35 @@ export function TonightPick({
   const trailer = pickTrailer(d?.videos);
   const { watch, rent } = availability(d);
   const lite = toLite(movie);
-  const posterW = Math.min(260, Math.round((width - 32) * 0.62));
+  const posterW = pickPosterWidth(width);
+  // free space beside the poster inside the card (card margin 16 + padding 16 on each side)
+  const gutter = Math.max(0, (width - 64 - posterW) / 2);
 
   return (
     <Animated.View
       key={movie.id}
-      style={[styles.card, { backgroundColor: c.card, borderColor: alpha(c.tint, 0.05) }, enter]}
+      style={[styles.card, liquid ? surface("card") : { backgroundColor: c.card, borderColor: alpha(c.tint, 0.05) }, enter]}
     >
-      <Image
-        source={backdropUri(movie.backdrop_path)}
-        blurRadius={18}
-        contentFit="cover"
-        style={[StyleSheet.absoluteFill, { opacity: dark ? 0.45 : 0.3, transform: [{ scale: 1.15 }] }]}
-      />
-      <LinearGradient
-        colors={[alpha(accent, 0.45), alpha(accent, 0)]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0.85, y: 0.55 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={[alpha(c.card, 0), alpha(c.card, 0.6), c.card]}
-        locations={[0, 0.45, 0.92]}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* the card's backdrop is its own blur target: the Next button beside the poster blurs it */}
+      <BlurTargetView ref={backdrop} style={StyleSheet.absoluteFill}>
+        <Image
+          source={backdropUri(movie.backdrop_path)}
+          blurRadius={18}
+          contentFit="cover"
+          style={[StyleSheet.absoluteFill, { opacity: dark ? 0.45 : 0.3, transform: [{ scale: 1.15 }] }]}
+        />
+        <LinearGradient
+          colors={[alpha(accent, 0.45), alpha(accent, 0)]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.85, y: 0.55 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={liquid ? [alpha(c.card, 0), alpha(c.card, 0.45), alpha(c.card, 0.7)] : [alpha(c.card, 0), alpha(c.card, 0.6), c.card]}
+          locations={[0, 0.45, 0.92]}
+          style={StyleSheet.absoluteFill}
+        />
+      </BlurTargetView>
 
       <View style={{ padding: 16, gap: 18 }}>
         <SwipePoster
@@ -116,6 +132,8 @@ export function TonightPick({
           path={movie.poster_path}
           id={movie.id}
           width={posterW}
+          gutter={gutter}
+          glassTarget={backdrop}
           glow={alpha(accent, 0.75)}
           onOpen={() => {
             signal("open", lite);
@@ -133,7 +151,7 @@ export function TonightPick({
               </Txt>
             </View>
             {d?.runtime ? (
-              <View style={[styles.badge, { backgroundColor: alpha(c.tint, 0.08) }]}>
+              <View style={[styles.badge, surface("chip")]}>
                 <Moon size={14} color={c.time} />
                 <Txt variant="caption" style={{ fontWeight: "600" }}>
                   Ends {formatClock(addMinutes(now, d.runtime))}
@@ -204,7 +222,7 @@ export function TonightPick({
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onNext("skip"); // nudges this title down for a few days → the next best fit moves up
               }}
-              style={[styles.round, { backgroundColor: alpha(c.tint, 0.08) }]}
+              style={[styles.round, surface("control")]}
             >
               <Shuffle size={16} color={c.ink} />
             </Tap>
@@ -218,6 +236,7 @@ export function TonightPick({
 
 function AppsPill({ loading, watch, rentCount }: { loading: boolean; watch: Provider[]; rentCount: number }) {
   const { c } = useTheme();
+  const surface = useSurface();
   if (loading) return <Skeleton style={{ height: 44, width: 128, borderRadius: 999 }} />;
   const label = watch.length
     ? `On ${watch.length} app${watch.length > 1 ? "s" : ""}`
@@ -226,7 +245,7 @@ function AppsPill({ loading, watch, rentCount }: { loading: boolean; watch: Prov
       : "Not streaming in India";
   const Icon = rentCount ? Clapperboard : Tv;
   return (
-    <View style={[styles.apps, { backgroundColor: alpha(c.tint, 0.08) }]}>
+    <View style={[styles.apps, surface("control")]}>
       {watch.length ? (
         <View style={{ flexDirection: "row" }}>
           {watch.slice(0, 3).map((p, i) => (
@@ -255,7 +274,7 @@ function Dot() {
 
 function PickSkeleton() {
   const { width } = useWindowDimensions();
-  const posterW = Math.min(260, Math.round((width - 32) * 0.62));
+  const posterW = pickPosterWidth(width);
   return (
     <Card style={{ padding: 16, gap: 14, marginHorizontal: 16, borderRadius: 32 }}>
       <Skeleton style={{ width: posterW, aspectRatio: 2 / 3, borderRadius: 24, alignSelf: "center" }} />
@@ -296,8 +315,8 @@ const styles = StyleSheet.create({
   stampLeft: { left: 12 },
   stampRight: { right: 12 },
   stampText: { color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: 1 },
-  nextBtn: { position: "absolute", right: 10, top: "42%" },
-  nextGlass: { height: 44, flexDirection: "row", alignItems: "center", gap: 2, paddingLeft: 14, paddingRight: 8 },
+  nextBtn: { position: "absolute" },
+  nextGlass: { alignItems: "center", justifyContent: "center" },
   card: { marginHorizontal: 16, borderRadius: 32, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
   badge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   trailer: { height: 48, borderRadius: 999, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", gap: 8 },
@@ -308,20 +327,23 @@ const styles = StyleSheet.create({
 /**
  * The pick's poster, swipeable: left = next pick, right = save + next, tap = open. Only a
  * horizontal drag activates (activeOffsetX), and a vertical one fails it (failOffsetY), so
- * the page still scrolls. A Next button on the poster does the same without a swipe.
+ * the page still scrolls. A round Next button beside the poster (in the card's right gutter,
+ * never on the artwork) does the same without a swipe.
  *
  * UI-thread callbacks only touch shared values and hand the rest to JS via scheduleOnRN:
  * calling plain JS functions from a worklet is what crashed the slider.
  *
- * The Next button's glass blurs the poster through the poster's own BlurTargetView. It is a
- * sibling of that target, never inside it: a BlurView inside the target it blurs loops
- * Android's RenderNode graph and crashes the app on open (0.1.1/0.1.2).
+ * The Next button's glass blurs the card backdrop through `glassTarget`, a BlurTargetView that is
+ * a sibling of this whole poster block, never an ancestor: a BlurView inside the target it blurs
+ * loops Android's RenderNode graph and crashes the app on open (0.1.1/0.1.2).
  */
 function SwipePoster({
   title,
   path,
   id,
   width,
+  gutter,
+  glassTarget,
   glow,
   onOpen,
   onNext,
@@ -330,16 +352,21 @@ function SwipePoster({
   path: string | null;
   id: number;
   width: number;
+  /** free width beside the poster, where the Next button goes */
+  gutter: number;
+  glassTarget: RefObject<ComponentRef<typeof View> | null>;
   glow: string;
   onOpen: () => void;
   onNext: (action: NextAction) => void;
 }) {
+  const ink = useGlassInk();
   const { c } = useTheme();
   const motion = useMotion();
   const { width: screenW } = useWindowDimensions();
   const x = useSharedValue(0);
   const gone = useSharedValue(false);
-  const posterTarget = useRef<ComponentRef<typeof View>>(null);
+  // round button centred in the gutter, as big as fits (48 on most phones, 40 on 360-wide ones)
+  const btn = Math.round(Math.min(48, Math.max(36, gutter - 8)));
   const [flying, setFlying] = useState(false);
   const back = motion.spring({ stiffness: 420, damping: 32 });
   const flyMs = motion.duration(240);
@@ -384,18 +411,16 @@ function SwipePoster({
   const nextFade = useAnimatedStyle(() => ({ opacity: interpolate(Math.abs(x.get()), [0, 50], [1, 0], Extrapolation.CLAMP) }));
 
   return (
-    <View style={{ alignSelf: "center", width }}>
+    <View>
       <GestureDetector gesture={pan}>
-        <Animated.View style={card}>
+        <Animated.View style={[{ alignSelf: "center", width }, card]}>
           <Tap
             scaleTo={0.97}
             accessibilityLabel={`Open ${title}. Swipe left for the next pick, right to save it.`}
             onPress={onOpen}
             style={{ borderRadius: 24, boxShadow: `0 30px 60px -22px ${glow}` }}
           >
-            <BlurTargetView ref={posterTarget} style={{ borderRadius: 24 }}>
-              <Poster path={path} width={width} radius={24} id={id} />
-            </BlurTargetView>
+            <Poster path={path} width={width} radius={24} id={id} />
           </Tap>
           <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, { borderColor: c.ink }, nextStamp]}>
             <Txt variant="label" style={styles.stampText}>
@@ -410,15 +435,14 @@ function SwipePoster({
           </Animated.View>
         </Animated.View>
       </GestureDetector>
-      {!flying && (
-        <Animated.View style={[styles.nextBtn, nextFade]}>
-          <Tap scaleTo={0.9} accessibilityLabel="Next pick" onPress={() => fly("skip")}>
-            <BlurTargetContext value={posterTarget}>
-              <Glass radius={22} interactive style={styles.nextGlass}>
-                <Txt variant="label" style={{ fontWeight: "700" }}>
-                  Next
-                </Txt>
-                <ChevronRight size={18} color={c.ink} />
+      {!flying && gutter >= 40 && (
+        <Animated.View style={[styles.nextBtn, { right: (gutter - btn) / 2, top: (width * 1.5 - btn) / 2 }, nextFade]}>
+          <Tap scaleTo={0.88} accessibilityLabel="Next pick" hitSlop={8} onPress={() => fly("skip")}>
+            <BlurTargetContext value={glassTarget}>
+              <Glass radius={btn / 2} interactive style={[styles.nextGlass, { width: btn, height: btn }]}>
+                <View style={ink.halo}>
+                  <ChevronRight size={Math.round(btn * 0.5)} color={ink.ink} strokeWidth={2.4} />
+                </View>
               </Glass>
             </BlurTargetContext>
           </Tap>

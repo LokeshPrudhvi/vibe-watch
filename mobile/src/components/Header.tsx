@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import ArrowLeft from "lucide-react-native/icons/arrow-left";
 import SettingsIcon from "lucide-react-native/icons/settings";
+import { Glass, useGlassInk, useSurface } from "@/components/Glass";
 import { Tap, Txt } from "@/components/ui";
 import { useMotion } from "@/lib/motion";
-import { alpha, fonts } from "@/theme/tokens";
+import { fonts } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
 const ROW = 52;
@@ -43,8 +44,9 @@ export function LargeTitle({ title, eyebrow }: { title: string; eyebrow?: string
 }
 
 /**
- * Thin bar pinned to the top. It stays transparent at the top of the page, turns solid once you
- * scroll, and shows a small title after the big one has scrolled under it. Nothing here changes size.
+ * Thin bar pinned to the top. It stays clear at the top of the page, turns to glass once you
+ * scroll (a live blur of the page behind it, inside GlassPage), and shows a small title after the
+ * big one has scrolled under it. Nothing here changes size.
  */
 export function TopBar({
   title,
@@ -62,14 +64,30 @@ export function TopBar({
   right?: ReactNode;
 }) {
   const { c } = useTheme();
+  const ink = useGlassInk();
   const insets = useSafeAreaInsets();
   const motion = useMotion();
   const bg = useSharedValue(0);
   const small = useSharedValue(0);
+  const fadeMs = motion.duration(250);
+  // A live blur redraws on every scroll frame, so the bar's glass only exists while it shows:
+  // it mounts under opacity 0 and stays just long enough to fade out (absolute, so nothing moves).
+  const [prev, setPrev] = useState(scrolled);
+  const [fading, setFading] = useState(false);
+  if (prev !== scrolled) {
+    setPrev(scrolled);
+    setFading(!scrolled);
+  }
+  const glass = scrolled || fading;
 
   useEffect(() => {
-    bg.set(withTiming(scrolled ? 1 : 0, { duration: motion.duration(250) }));
-  }, [scrolled, bg, motion]);
+    bg.set(withTiming(scrolled ? 1 : 0, { duration: fadeMs }));
+  }, [scrolled, bg, fadeMs]);
+  useEffect(() => {
+    if (!fading) return;
+    const t = setTimeout(() => setFading(false), fadeMs + 50);
+    return () => clearTimeout(t);
+  }, [fading, fadeMs]);
   useEffect(() => {
     small.set(withTiming(collapsed ? 1 : 0, { duration: motion.duration(200) }));
   }, [collapsed, small, motion]);
@@ -79,14 +97,9 @@ export function TopBar({
 
   return (
     <View pointerEvents="box-none" style={[styles.bar, { height: insets.top + ROW + 8 }]}>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: alpha(c.base, 0.96), borderBottomWidth: StyleSheet.hairlineWidth, borderColor: alpha(c.tint, 0.08) },
-          bgStyle,
-        ]}
-      />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, bgStyle]}>
+        {glass && <Glass variant="bar" radius={0} style={StyleSheet.absoluteFill} />}
+      </Animated.View>
       <View style={[styles.row, { marginTop: insets.top + 4 }]}>
         {back && (
           <IconButton
@@ -100,7 +113,7 @@ export function TopBar({
           numberOfLines={1}
           accessibilityElementsHidden={!collapsed}
           importantForAccessibility={collapsed ? "auto" : "no-hide-descendants"}
-          style={[{ flex: 1, fontFamily: fonts.display, fontSize: 18, color: c.ink, letterSpacing: -0.3 }, titleStyle]}
+          style={[{ flex: 1, fontFamily: fonts.display, fontSize: 18, color: c.ink, letterSpacing: -0.3 }, ink.textHalo, titleStyle]}
         >
           {title}
         </Animated.Text>
@@ -126,19 +139,17 @@ export function IconButton({
   solid?: boolean;
 }) {
   const { c } = useTheme();
+  const surface = useSurface();
+  // static glass bead, not a live blur: a live one would blur the whole page again every frame
   return (
     <Tap
       onPress={onPress}
       accessibilityLabel={label}
       hitSlop={6}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: solid ? alpha(c.card, 0.82) : alpha(c.tint, 0.08),
-      }}
+      style={[
+        { width: size, height: size, borderRadius: size / 2, alignItems: "center", justifyContent: "center" },
+        surface(solid ? "overlay" : "control"),
+      ]}
     >
       <Icon size={20} color={c.ink} />
     </Tap>

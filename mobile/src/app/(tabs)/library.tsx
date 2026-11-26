@@ -8,11 +8,12 @@ import X from "lucide-react-native/icons/x";
 import type { Mark, MarkType } from "@shared/recommend";
 import { Segmented } from "@/components/Controls";
 import { useNavSpace } from "@/components/FloatingNav";
+import { useSurface } from "@/components/Glass";
+import { GlassPage } from "@/components/GlassPage";
 import { LargeTitle, TopBar, useHeaderScroll, useHeaderSpace } from "@/components/Header";
 import { Poster, PosterGrid, openTitle } from "@/components/Posters";
 import { Empty, Tap, Txt } from "@/components/ui";
 import { useVibeStore } from "@/store/vibe";
-import { alpha } from "@/theme/tokens";
 import { useTheme } from "@/theme/useTheme";
 
 const SHELVES: { type: MarkType; label: string; Icon: typeof Heart; empty: string; remove: string }[] = [
@@ -24,6 +25,7 @@ const SHELVES: { type: MarkType; label: string; Icon: typeof Heart; empty: strin
 
 export default function LibraryScreen() {
   const { c } = useTheme();
+  const surface = useSurface();
   const [shelf, setShelf] = useState<MarkType>("save");
   const marks = useVibeStore((s) => s.marks);
   const unmark = useVibeStore((s) => s.unmark);
@@ -55,7 +57,10 @@ export default function LibraryScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.base }}>
+    <GlassPage
+      ambient={{ path: items[0]?.movie.poster, kind: "poster" }}
+      bar={<TopBar title="Library" scrolled={header.scrolled} collapsed={header.collapsed} />}
+    >
       <PosterGrid<Mark>
         data={items}
         keyOf={(m) => `${m.type}-${m.movie.id}`}
@@ -75,26 +80,16 @@ export default function LibraryScreen() {
               onPress={() => unmark(shelf, movie.id)}
               accessibilityLabel={`${current.remove}: ${movie.title}`}
               hitSlop={6}
-              style={{
-                position: "absolute",
-                top: 6,
-                right: 6,
-                width: 30,
-                height: 30,
-                borderRadius: 15,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: alpha(c.card, 0.85),
-                borderWidth: 1,
-                borderColor: alpha(c.tint, 0.1),
-              }}
+              style={[
+                { position: "absolute", top: 6, right: 6, width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+                surface("overlay"),
+              ]}
             >
               <X size={15} color={c.ink} />
             </Tap>
           </View>
         )}
       />
-      <TopBar title="Library" scrolled={header.scrolled} collapsed={header.collapsed} />
-    </View>
+    </GlassPage>
   );
 }

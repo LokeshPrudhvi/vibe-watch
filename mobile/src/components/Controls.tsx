@@ -3,6 +3,7 @@ import { Children, Fragment, useEffect, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { useSurface } from "@/components/Glass";
 import { Card, Txt } from "@/components/ui";
 import { SPRING, useMotion } from "@/lib/motion";
 import { alpha } from "@/theme/tokens";
@@ -68,6 +69,7 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   const { c } = useTheme();
+  const surface = useSurface();
   const motion = useMotion();
   const spring = motion.spring(SPRING.pill);
   const [width, setWidth] = useState(0);
@@ -88,15 +90,11 @@ export function Segmented<T extends string>({
       accessibilityRole="radiogroup"
       accessibilityLabel={label}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-      style={[styles.segmented, { backgroundColor: alpha(c.tint, 0.08) }]}
+      style={[styles.segmented, surface("control")]}
     >
       {seg > 0 && (
         <Animated.View
-          style={[
-            styles.segPill,
-            { width: seg, backgroundColor: c.card, borderColor: alpha(c.tint, 0.1), boxShadow: `0 1px 3px ${alpha("#000000", 0.18)}` },
-            pill,
-          ]}
+          style={[styles.segPill, { width: seg }, surface("thumb"), pill]}
         />
       )}
       {options.map(({ value: v, label: l, Icon }) => {
@@ -187,7 +185,7 @@ const styles = StyleSheet.create({
   track: { width: 52, height: 32, borderRadius: 16, padding: 4 },
   knob: { width: 24, height: 24, borderRadius: 12, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" },
   segmented: { flexDirection: "row", borderRadius: 999, padding: 4 },
-  segPill: { position: "absolute", top: 4, bottom: 4, left: 4, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
+  segPill: { position: "absolute", top: 4, bottom: 4, left: 4, borderRadius: 999 },
   segItem: { flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 6 },
   row: { flexDirection: "row", alignItems: "center", gap: 16, paddingHorizontal: 20, paddingVertical: 16 },
 });

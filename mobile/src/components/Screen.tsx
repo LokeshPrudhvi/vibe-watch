@@ -1,10 +1,14 @@
 import type { ReactNode } from "react";
-import { RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
+import { GlassPage, type AmbientSource } from "@/components/GlassPage";
 import { LargeTitle, TopBar, useHeaderScroll, useHeaderSpace } from "@/components/Header";
 import { useNavSpace } from "@/components/FloatingNav";
 import { useTheme } from "@/theme/useTheme";
 
-/** A scrolling page with the large-title header, padded to clear the floating navbar. */
+/**
+ * A scrolling page with the large-title header, padded to clear the floating navbar. The page is a
+ * GlassPage: its bar is live glass over the content, and `ambient` tints the page in liquid mode.
+ */
 export function Screen({
   title,
   eyebrow,
@@ -14,6 +18,7 @@ export function Screen({
   navbar = true,
   onRefresh,
   refreshing = false,
+  ambient,
 }: {
   title: string;
   eyebrow?: string;
@@ -24,6 +29,8 @@ export function Screen({
   navbar?: boolean;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** image the page's ambient backdrop is made from (liquid glass); defaults to trending */
+  ambient?: AmbientSource;
 }) {
   const { c } = useTheme();
   const header = useHeaderScroll();
@@ -31,7 +38,10 @@ export function Screen({
   const navSpace = useNavSpace();
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.base }}>
+    <GlassPage
+      ambient={ambient}
+      bar={<TopBar title={title} scrolled={header.scrolled} collapsed={header.collapsed} back={back} settings={settings} />}
+    >
       <ScrollView
         onScroll={header.onScroll}
         scrollEventThrottle={32}
@@ -47,7 +57,6 @@ export function Screen({
         <LargeTitle title={title} eyebrow={eyebrow} />
         {children}
       </ScrollView>
-      <TopBar title={title} scrolled={header.scrolled} collapsed={header.collapsed} back={back} settings={settings} />
-    </View>
+    </GlassPage>
   );
 }

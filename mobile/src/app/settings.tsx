@@ -43,12 +43,12 @@ export default function SettingsScreen() {
               ]}
             />
           </View>
-          <SettingRow title="Liquid glass" description="Clear, light-catching glass on the navbar. Off uses classic frosted glass.">
+          <SettingRow title="Liquid glass" description="Clear, light-catching glass on every page. Off uses classic frosted glass.">
             <Toggle label="Liquid glass" checked={s.liquidGlass} onChange={(v) => s.set("liquidGlass", v)} />
           </SettingRow>
           <SettingRow
             title="Reduce dynamic blur"
-            description="Lighter blur behind the navbar. Easier to read over busy posters."
+            description="Calmer, more solid glass. Easier to read over busy posters."
             disabled={s.glassPerformance}
           >
             <Toggle

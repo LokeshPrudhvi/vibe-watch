@@ -8,6 +8,7 @@ import { scheduleOnRN } from "react-native-worklets";
 import Moon from "lucide-react-native/icons/moon";
 import { TIME_MAX, TIME_MIN } from "@shared/taste";
 import { addMinutes, formatClock, formatDuration, minutesUntil } from "@shared/time";
+import { useSurface } from "@/components/Glass";
 import { Card, Tap, Txt } from "@/components/ui";
 import { useNow } from "@/hooks/useUtils";
 import { useMotion } from "@/lib/motion";
@@ -33,6 +34,7 @@ const toPct = (m: number) => {
  */
 export function TimeSlider() {
   const { c } = useTheme();
+  const surface = useSurface();
   const stored = useVibeStore((s) => s.minutes);
   const [draft, setDraft] = useState<number | null>(null);
   const minutes = draft ?? stored;
@@ -115,7 +117,7 @@ export function TimeSlider() {
             I&apos;ve got <Txt variant="heading" style={{ fontSize: 24, lineHeight: 30, color: c.time }}>{formatDuration(minutes)}</Txt>
           </Txt>
         </View>
-        <View style={{ borderRadius: 16, backgroundColor: alpha(c.tint, 0.05), paddingHorizontal: 12, paddingVertical: 8, alignItems: "flex-end" }}>
+        <View style={[{ borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, alignItems: "flex-end" }, surface("chip")]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Moon size={12} color={c.muted} />
             <Txt variant="caption" muted>
@@ -188,7 +190,7 @@ export function TimeSlider() {
             <Tap
               key={p.label}
               onPress={() => setMinutes(Math.floor(p.value / STEP) * STEP)}
-              style={{ borderRadius: 999, backgroundColor: alpha(c.tint, 0.06), paddingHorizontal: 12, paddingVertical: 8 }}
+              style={[{ borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }, surface("chip")]}
             >
               <Txt variant="label" style={{ fontSize: 12 }}>
                 {p.label}

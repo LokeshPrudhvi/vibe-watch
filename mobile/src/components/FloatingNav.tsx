@@ -11,7 +11,7 @@ import MoonStar from "lucide-react-native/icons/moon-star";
 import Search from "lucide-react-native/icons/search";
 import UsersRound from "lucide-react-native/icons/users-round";
 import X from "lucide-react-native/icons/x";
-import { Glass } from "@/components/Glass";
+import { Glass, useGlassInk } from "@/components/Glass";
 import { Tap, Txt } from "@/components/ui";
 import { SPRING, useMotion } from "@/lib/motion";
 import { useSearch } from "@/store/ui";
@@ -102,8 +102,12 @@ export function FloatingNav() {
 }
 
 function NavIcon({ Icon }: { Icon: typeof Search }) {
-  const { c } = useTheme();
-  return <Icon size={26} color={c.ink} strokeWidth={2.1} />;
+  const ink = useGlassInk();
+  return (
+    <View style={ink.halo}>
+      <Icon size={26} color={ink.ink} strokeWidth={2.1} />
+    </View>
+  );
 }
 
 const PAD = 6;
@@ -111,6 +115,7 @@ const PAD = 6;
 function TabsPill({ active }: { active: number }) {
   const { c, dark } = useTheme();
   const { liquid } = useEffectiveGlass();
+  const ink = useGlassInk();
   const motion = useMotion();
   const spring = motion.spring(SPRING.pill);
   const [width, setWidth] = useState(0);
@@ -130,7 +135,7 @@ function TabsPill({ active }: { active: number }) {
   }));
 
   return (
-    <View style={[styles.fill, { flexDirection: "row", padding: PAD }]} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+    <View style={styles.fill} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {tabW > 0 && active >= 0 && (
         <Animated.View
           style={[
@@ -146,45 +151,51 @@ function TabsPill({ active }: { active: number }) {
           ]}
         />
       )}
-      {TABS.map(({ href, label, Icon }, i) => {
-        const on = i === active;
-        return (
-          <Tap
-            key={href}
-            scaleTo={0.9}
-            onPress={() => {
-              if (!on) Haptics.selectionAsync();
-              router.navigate(href);
-            }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={label}
-            style={styles.tab}
-          >
-            <Icon size={26} color={on ? c.ink : c.muted} strokeWidth={on ? 2.3 : 1.9} />
-            <Txt variant="caption" numberOfLines={1} style={{ fontWeight: "600", color: on ? c.ink : c.muted }}>
-              {label}
-            </Txt>
-          </Tap>
-        );
-      })}
+      {/* icons and labels share one layer, so one halo keeps them readable on clear glass */}
+      <View style={[StyleSheet.absoluteFill, styles.tabs, ink.halo]}>
+        {TABS.map(({ href, label, Icon }, i) => {
+          const on = i === active;
+          return (
+            <Tap
+              key={href}
+              scaleTo={0.9}
+              onPress={() => {
+                if (!on) Haptics.selectionAsync();
+                router.navigate(href);
+              }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={label}
+              style={styles.tab}
+            >
+              <Icon size={26} color={on ? ink.ink : ink.soft} strokeWidth={on ? 2.3 : 1.9} />
+              <Txt variant="caption" numberOfLines={1} style={{ fontWeight: "600", color: on ? ink.ink : ink.soft }}>
+                {label}
+              </Txt>
+            </Tap>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 function SearchField() {
   const { c } = useTheme();
+  const ink = useGlassInk();
   const query = useSearch((s) => s.query);
   const setQuery = useSearch((s) => s.setQuery);
   return (
     <View style={[styles.fill, { flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 20, paddingRight: 8 }]}>
-      <Search size={22} color={c.muted} />
+      <View style={ink.halo}>
+        <Search size={22} color={ink.soft} />
+      </View>
       <TextInput
         autoFocus
         value={query}
         onChangeText={setQuery}
         placeholder="Search movies"
-        placeholderTextColor={c.muted}
+        placeholderTextColor={ink.soft}
         returnKeyType="search"
         autoCorrect={false}
         accessibilityLabel="Search movies"
@@ -212,6 +223,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   pill: { position: "absolute", borderRadius: 999 },
+  tabs: { flexDirection: "row", padding: PAD },
   tab: { flex: 1, alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 999 },
   clear: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
 });
