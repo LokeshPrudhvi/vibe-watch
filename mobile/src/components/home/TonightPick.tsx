@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { Linking, StyleSheet, View, useWindowDimensions } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
+import { BlurTargetView } from "expo-blur";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -24,7 +25,7 @@ import { availability, pickTrailer, yearOf, type Provider } from "@shared/tmdb";
 import { FeedbackButtons, MatchRing } from "@/components/Feedback";
 import { Poster, openTitle } from "@/components/Posters";
 import { Card, Chip, Skeleton, Tap, Txt } from "@/components/ui";
-import { Glass } from "@/components/Glass";
+import { BlurTargetContext, Glass } from "@/components/Glass";
 import { useAccent, useMovie } from "@/hooks/tmdb";
 import { useNow } from "@/hooks/useUtils";
 import { backdropUri, logoUri } from "@/lib/images";
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   stampLeft: { left: 12 },
   stampRight: { right: 12 },
   stampText: { color: "#fff", fontWeight: "800", fontSize: 17, letterSpacing: 1 },
-  nextBtn: { position: "absolute", right: -12, top: "42%" },
+  nextBtn: { position: "absolute", right: 10, top: "42%" },
   nextGlass: { height: 44, flexDirection: "row", alignItems: "center", gap: 2, paddingLeft: 14, paddingRight: 8 },
   card: { marginHorizontal: 16, borderRadius: 32, overflow: "hidden", borderWidth: StyleSheet.hairlineWidth },
   badge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
@@ -311,6 +312,10 @@ const styles = StyleSheet.create({
  *
  * UI-thread callbacks only touch shared values and hand the rest to JS via scheduleOnRN:
  * calling plain JS functions from a worklet is what crashed the slider.
+ *
+ * The Next button's glass blurs the poster through the poster's own BlurTargetView. It is a
+ * sibling of that target, never inside it: a BlurView inside the target it blurs loops
+ * Android's RenderNode graph and crashes the app on open (0.1.1/0.1.2).
  */
 function SwipePoster({
   title,
@@ -334,6 +339,7 @@ function SwipePoster({
   const { width: screenW } = useWindowDimensions();
   const x = useSharedValue(0);
   const gone = useSharedValue(false);
+  const posterTarget = useRef<ComponentRef<typeof View>>(null);
   const [flying, setFlying] = useState(false);
   const back = motion.spring({ stiffness: 420, damping: 32 });
   const flyMs = motion.duration(240);
@@ -374,6 +380,8 @@ function SwipePoster({
   }));
   const nextStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [-110, -20], [1, 0], Extrapolation.CLAMP) }));
   const saveStamp = useAnimatedStyle(() => ({ opacity: interpolate(x.get(), [20, 110], [0, 1], Extrapolation.CLAMP) }));
+  // the button stays put while the poster moves, so it steps aside during a drag
+  const nextFade = useAnimatedStyle(() => ({ opacity: interpolate(Math.abs(x.get()), [0, 50], [1, 0], Extrapolation.CLAMP) }));
 
   return (
     <View style={{ alignSelf: "center", width }}>
@@ -385,7 +393,9 @@ function SwipePoster({
             onPress={onOpen}
             style={{ borderRadius: 24, boxShadow: `0 30px 60px -22px ${glow}` }}
           >
-            <Poster path={path} width={width} radius={24} id={id} />
+            <BlurTargetView ref={posterTarget} style={{ borderRadius: 24 }}>
+              <Poster path={path} width={width} radius={24} id={id} />
+            </BlurTargetView>
           </Tap>
           <Animated.View pointerEvents="none" style={[styles.stamp, styles.stampLeft, { borderColor: c.ink }, nextStamp]}>
             <Txt variant="label" style={styles.stampText}>
@@ -401,14 +411,18 @@ function SwipePoster({
         </Animated.View>
       </GestureDetector>
       {!flying && (
-        <Tap scaleTo={0.9} accessibilityLabel="Next pick" onPress={() => fly("skip")} style={styles.nextBtn}>
-          <Glass radius={22} interactive style={styles.nextGlass}>
-            <Txt variant="label" style={{ fontWeight: "700" }}>
-              Next
-            </Txt>
-            <ChevronRight size={18} color={c.ink} />
-          </Glass>
-        </Tap>
+        <Animated.View style={[styles.nextBtn, nextFade]}>
+          <Tap scaleTo={0.9} accessibilityLabel="Next pick" onPress={() => fly("skip")}>
+            <BlurTargetContext value={posterTarget}>
+              <Glass radius={22} interactive style={styles.nextGlass}>
+                <Txt variant="label" style={{ fontWeight: "700" }}>
+                  Next
+                </Txt>
+                <ChevronRight size={18} color={c.ink} />
+              </Glass>
+            </BlurTargetContext>
+          </Tap>
+        </Animated.View>
       )}
       <Txt variant="caption" muted style={{ textAlign: "center", marginTop: 10 }}>
         ← next pick · save →
