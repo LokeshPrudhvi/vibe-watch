@@ -5,7 +5,6 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import CalendarClock from "lucide-react-native/icons/calendar-clock";
 import Clapperboard from "lucide-react-native/icons/clapperboard";
 import EyeOff from "lucide-react-native/icons/eye-off";
@@ -31,6 +30,7 @@ import {
   type MovieDetails,
   type Provider,
 } from "@shared/tmdb";
+import { Appear } from "@/components/Appear";
 import { ErrorCard, FeedbackButtons, MatchRing } from "@/components/Feedback";
 import { useSurface } from "@/components/Glass";
 import { GlassPage } from "@/components/GlassPage";
@@ -124,9 +124,9 @@ export default function TitleScreen() {
               isLoading && <Skeleton style={{ width: posterW, aspectRatio: 2 / 3, borderRadius: 28 }} />
             )}
             {data ? (
-              <Animated.View entering={motion.off ? undefined : FadeInDown.delay(120).duration(motion.duration(380))} style={{ alignItems: "center" }}>
+              <Appear delay={120} duration={380} rise={16} style={{ alignItems: "center" }}>
                 <Hero data={data} released={released} accent={accent} />
-              </Animated.View>
+              </Appear>
             ) : (
               isLoading && (
                 <View style={{ alignItems: "center", gap: 10 }}>
@@ -138,7 +138,7 @@ export default function TitleScreen() {
           </View>
 
           {data && (
-            <Animated.View entering={motion.off ? undefined : FadeIn.delay(200)} style={{ gap: 36 }}>
+            <Appear delay={200} duration={300} style={{ gap: 36 }}>
               <Actions data={data} trailerKey={trailer?.key} accent={accent} />
               <ScoreTiles data={data} released={released} />
               <WhereToWatch data={data} released={released} />
@@ -154,7 +154,7 @@ export default function TitleScreen() {
                 Data and images from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.
                 Streaming availability by JustWatch.
               </Txt>
-            </Animated.View>
+            </Appear>
           )}
         </View>
       </ScrollView>

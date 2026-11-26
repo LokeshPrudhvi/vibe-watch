@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { Easing, FadeInDown, FadeOutDown, useAnimatedProps, useSharedValue, withTiming } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 import Bookmark from "lucide-react-native/icons/bookmark";
 import Eye from "lucide-react-native/icons/eye";
@@ -12,6 +12,7 @@ import ThumbsDown from "lucide-react-native/icons/thumbs-down";
 import Undo2 from "lucide-react-native/icons/undo-2";
 import type { MarkType, MovieLite } from "@shared/recommend";
 import { ApiError, isReleased, isRetryable } from "@shared/tmdb";
+import { Appear } from "@/components/Appear";
 import { useSurface } from "@/components/Glass";
 import { Card, Tap, Txt } from "@/components/ui";
 import { API_BASE } from "@/lib/api";
@@ -74,17 +75,16 @@ export function ErrorCard({ error, onRetry }: { error: unknown; onRetry?: () => 
 export function Toaster() {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const motion = useMotion();
   const toast = useToast((s) => s.toast);
   const dismiss = useToast((s) => s.dismiss);
-  // the wrapper stays mounted so the exit animation can play
+  // the wrapper stays mounted; each toast fades up on its own key
   return (
     <View pointerEvents="box-none" style={[styles.toastWrap, { bottom: Math.max(insets.bottom, 12) + BAR + 14 }]}>
       {toast && (
-        <Animated.View
+        <Appear
           key={toast.id}
-          entering={motion.off ? undefined : FadeInDown.springify().damping(20)}
-          exiting={motion.off ? undefined : FadeOutDown.duration(150)}
+          duration={220}
+          rise={14}
           accessibilityLiveRegion="polite"
           style={[
             styles.toast,
@@ -110,7 +110,7 @@ export function Toaster() {
               <Txt variant="label">Undo</Txt>
             </Tap>
           )}
-        </Animated.View>
+        </Appear>
       )}
     </View>
   );

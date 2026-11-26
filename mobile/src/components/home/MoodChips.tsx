@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { ScrollView, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import Brain from "lucide-react-native/icons/brain";
 import Coffee from "lucide-react-native/icons/coffee";
 import Smile from "lucide-react-native/icons/smile";
 import Zap from "lucide-react-native/icons/zap";
 import { MOODS, MOOD_ORDER, type MoodId } from "@shared/moods";
+import { Appear } from "@/components/Appear";
 import { useSurface } from "@/components/Glass";
 import { Tap, Txt } from "@/components/ui";
 import { SPRING, useMotion } from "@/lib/motion";
@@ -88,11 +89,11 @@ export function MoodChips() {
           );
         })}
       </ScrollView>
-      <Animated.View key={mood} entering={motion.off ? undefined : FadeInDown.duration(200)}>
+      <Appear replay={mood} duration={200} rise={-6}>
         <Txt variant="small" muted style={{ marginTop: 12, paddingHorizontal: 16 }}>
           {MOODS[mood].tagline}
         </Txt>
-      </Animated.View>
+      </Appear>
     </View>
   );
 }
